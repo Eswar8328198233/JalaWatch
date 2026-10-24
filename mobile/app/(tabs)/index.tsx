@@ -111,6 +111,7 @@ export default function LiveMapScreen() {
           <View style={styles.centerContainer}>
             <ActivityIndicator size="large" color={Colors.primary} />
             <Text style={styles.loadingText}>Loading groundwater observations...</Text>
+            <Text style={styles.loadingSubtext}>Connecting to JalaWatch cloud server...</Text>
           </View>
         ) : (
           <View style={styles.mapWrapper}>
@@ -323,6 +324,11 @@ const styles = StyleSheet.create({
     color: Colors.slate500,
     fontWeight: '600',
     marginTop: 8,
+  },
+  loadingSubtext: {
+    fontSize: 11,
+    color: Colors.slate400,
+    marginTop: 4,
   },
   errorTitle: {
     fontSize: 16,

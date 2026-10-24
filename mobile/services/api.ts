@@ -7,6 +7,12 @@ const DEV_LAN_IP = '192.168.29.89';
 const FALLBACK_LAN_IP = '192.168.31.108';
 
 /**
+ * Production cloud backend URL on Render.
+ * Prioritized by default in production and general app usage.
+ */
+export const PRODUCTION_API_URL = 'https://jalawatch.onrender.com';
+
+/**
  * Allows the user or UI to set a custom backend URL dynamically
  * (e.g. current laptop IP or a cloud HTTPS domain) without rebuilding the app.
  */
@@ -20,11 +26,18 @@ export function setApiBaseUrl(url: string): void {
   API_BASE = cleanUrl;
 }
 
-// Build list of candidate endpoints to auto-connect whether on Wi-Fi, Emulator (10.0.2.2), or USB (127.0.0.1)
+/**
+ * Build prioritized list of candidate endpoints:
+ * 0. User manually configured in app UI
+ * 1. Explicit environment variable override (EXPO_PUBLIC_API_URL)
+ * 2. Production Render cloud backend (Default primary)
+ * 3. Dynamic host IP from Metro connection (only in development)
+ * 4. Local development fallbacks (LAN IP, Android emulator 10.0.2.2, USB adb reverse 127.0.0.1)
+ */
 export const getCandidateUrls = (): string[] => {
   const candidates: string[] = [];
 
-  // 0. User manually configured in app
+  // 0. User manually configured in app settings
   if (userConfiguredBaseUrl) {
     candidates.push(userConfiguredBaseUrl);
   }
@@ -34,7 +47,10 @@ export const getCandidateUrls = (): string[] => {
     candidates.push(process.env.EXPO_PUBLIC_API_URL.replace(/\/+$/, ''));
   }
 
-  // 2. Dynamic host IP from Metro connection (if present in development)
+  // 2. Production Render cloud backend (Default primary for production builds)
+  candidates.push(PRODUCTION_API_URL);
+
+  // 3. Dynamic host IP from Metro connection (if present in local development)
   const hostUri =
     Constants.expoConfig?.hostUri ||
     (Constants as any).manifest2?.extra?.expoClient?.hostUri ||
@@ -46,21 +62,21 @@ export const getCandidateUrls = (): string[] => {
     }
   }
 
-  // 3. Current active local network Wi-Fi IP (for physical phone on same Wi-Fi)
+  // 4. Current active local network Wi-Fi IP (for physical phone on same Wi-Fi)
   candidates.push(`http://${DEV_LAN_IP}:5000`);
 
-  // 4. Android Emulator loopback alias (maps emulator to host machine localhost)
+  // 5. Android Emulator loopback alias (maps emulator to host machine localhost)
   if (Platform.OS === 'android') {
     candidates.push('http://10.0.2.2:5000');
   }
 
-  // 5. USB cable with ADB reverse (works on physical phone via: adb reverse tcp:5000 tcp:5000)
+  // 6. USB cable with ADB reverse (works on physical phone via: adb reverse tcp:5000 tcp:5000)
   candidates.push('http://127.0.0.1:5000');
 
-  // 6. Previous LAN IP fallback
+  // 7. Previous LAN IP fallback
   candidates.push(`http://${FALLBACK_LAN_IP}:5000`);
 
-  // 7. Localhost fallback
+  // 8. Localhost fallback
   candidates.push('http://localhost:5000');
 
   return Array.from(new Set(candidates));
@@ -76,6 +92,16 @@ export function getApiBaseUrl(): string {
 }
 
 /**
+ * Returns appropriate timeout in milliseconds.
+ * Cloud instances (e.g. Render free tier) require up to 35-45s when waking up from cold sleep.
+ * Local LAN / USB connections respond in under 3.5s.
+ */
+function getTimeoutForUrl(url: string): number {
+  const isCloud = url.startsWith('https://') || url.includes('onrender.com');
+  return isCloud ? 38000 : 3500;
+}
+
+/**
  * Tests connection to a specific backend URL using the /api/health endpoint
  */
 export async function testEndpoint(baseUrl: string): Promise<{ ok: boolean; status: number; message: string }> {
@@ -84,15 +110,21 @@ export async function testEndpoint(baseUrl: string): Promise<{ ok: boolean; stat
     if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
       cleanUrl = `http://${cleanUrl}`;
     }
+    const timeoutMs = getTimeoutForUrl(cleanUrl);
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     const res = await fetch(`${cleanUrl}/api/health`, { signal: controller.signal });
     clearTimeout(timeoutId);
 
     if (res.ok) {
       const data = await res.json();
-      return { ok: true, status: res.status, message: `Connected: ${data.service || 'JalaWatch API'} (${data.status})` };
+      const isCloud = cleanUrl.includes('onrender.com');
+      return {
+        ok: true,
+        status: res.status,
+        message: `Connected: ${data.service || 'JalaWatch API'} (${data.status})${isCloud ? ' [Render Cloud]' : ''}`,
+      };
     }
     return { ok: false, status: res.status, message: `Server returned HTTP ${res.status}` };
   } catch (err: any) {
@@ -100,31 +132,40 @@ export async function testEndpoint(baseUrl: string): Promise<{ ok: boolean; stat
     return {
       ok: false,
       status: 0,
-      message: isTimeout ? 'Connection timed out (no response in 3s)' : (err.message || 'Connection failed'),
+      message: isTimeout
+        ? 'Connection timed out. If Render was sleeping, please wait a moment for the instance to wake up.'
+        : (err.message || 'Connection failed'),
     };
   }
 }
 
 /**
- * Smart fetch helper that automatically tries candidate URLs
- * (seamlessly switching between Wi-Fi LAN, Emulator 10.0.2.2, and USB adb reverse)
+ * Smart fetch helper that automatically tries candidate URLs.
+ * Mutating requests (POST, PUT, DELETE) target currentBaseUrl only to prevent
+ * accidental duplicate submissions across multiple candidate servers.
  */
 async function fetchWithEndpointFallback(
   path: string,
   init?: RequestInit
 ): Promise<Response> {
-  const candidates = getCandidateUrls();
-  const orderedCandidates = [
-    currentBaseUrl,
-    ...candidates.filter((c) => c !== currentBaseUrl),
-  ];
+  const isMutation = init?.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(init.method.toUpperCase());
+
+  // For mutations (e.g. submit report, update status), target currentBaseUrl directly
+  // to prevent duplicate submissions or race conditions.
+  const candidates = isMutation
+    ? [currentBaseUrl]
+    : [
+        currentBaseUrl,
+        ...getCandidateUrls().filter((c) => c !== currentBaseUrl),
+      ];
 
   const failedAttempts: string[] = [];
 
-  for (const candidate of orderedCandidates) {
+  for (const candidate of candidates) {
     try {
+      const timeoutMs = getTimeoutForUrl(candidate);
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       const res = await fetch(`${candidate}${path}`, {
         ...init,
@@ -141,13 +182,17 @@ async function fetchWithEndpointFallback(
       }
     } catch (err: any) {
       const isTimeout = err.name === 'AbortError' || err.message?.includes('aborted');
-      failedAttempts.push(`${candidate} (${isTimeout ? 'Timed out' : 'Refused/Unreachable'})`);
+      failedAttempts.push(`${candidate} (${isTimeout ? 'Timed out / Waking up' : 'Refused/Unreachable'})`);
     }
   }
 
+  const isCloudPrimary = currentBaseUrl.includes('onrender.com') || currentBaseUrl.startsWith('https://');
+  const cloudHint = isCloudPrimary
+    ? `\n\nNote: If the Render cloud backend was idle, it may take 30-40 seconds to spin up on cold start. Please tap 'Retry Connection'.`
+    : `\n\nCheck that Flask is running on 0.0.0.0:5000 or switch to production: ${PRODUCTION_API_URL}`;
+
   throw new Error(
-    `Backend unreachable. Attempted endpoints:\n${failedAttempts.map((f) => `• ${f}`).join('\n')}\n\n` +
-    `Check that Flask is running ('python app.py') on host 0.0.0.0:5000 and your device is on the same network.`
+    `Backend unreachable. Attempted endpoints:\n${failedAttempts.map((f) => `• ${f}`).join('\n')}${cloudHint}`
   );
 }
 
@@ -408,3 +453,21 @@ export async function adminUpdateReportStatus(
   return data.report;
 }
 
+/**
+ * Admin Export CSV: Downloads or fetches CSV report export from /api/admin/export
+ */
+export async function adminExportCsv(token: string): Promise<string> {
+  const res = await fetchWithEndpointFallback('/api/admin/export', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'text/csv, application/json',
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to export CSV (HTTP ${res.status})`);
+  }
+
+  return await res.text();
+}

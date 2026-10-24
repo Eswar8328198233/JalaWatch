@@ -11,6 +11,7 @@ import {
   Platform,
   ActivityIndicator,
   Modal,
+  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -36,6 +37,7 @@ import {
   Droplets,
   Check,
   ChevronRight,
+  Download,
 } from 'lucide-react-native';
 import { Colors, Shadows } from '../../constants/theme';
 import {
@@ -45,6 +47,7 @@ import {
   adminLogin,
   adminGetReports,
   adminUpdateReportStatus,
+  adminExportCsv,
   AdminUser,
   AdminReport,
 } from '../../services/api';
@@ -173,6 +176,20 @@ export default function AboutScreen() {
       Alert.alert('Verification Toggle Failed', err.message);
     } finally {
       setUpdatingId(null);
+    }
+  };
+
+  // Export CSV handler
+  const handleExportCsv = async () => {
+    if (!adminToken) return;
+    try {
+      const csv = await adminExportCsv(adminToken);
+      await Share.share({
+        title: 'jalawatch_reports_export.csv',
+        message: csv,
+      });
+    } catch (err: any) {
+      Alert.alert('CSV Export Failed', err.message || 'Could not export reports CSV.');
     }
   };
 
@@ -470,6 +487,21 @@ export default function AboutScreen() {
                 </Text>
               </TouchableOpacity>
             ))}
+          </View>
+
+          {/* Action Sub-header: Count and CSV Export */}
+          <View style={styles.modalActionRow}>
+            <Text style={styles.modalReportCount}>
+              {adminReports.length} {adminFilterStatus === 'All' ? 'total' : adminFilterStatus} reports
+            </Text>
+            <TouchableOpacity
+              style={styles.exportCsvBtn}
+              onPress={handleExportCsv}
+              activeOpacity={0.8}
+            >
+              <Download size={13} color={Colors.primaryDark} />
+              <Text style={styles.exportCsvBtnText}>Export CSV</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Report List */}
@@ -1012,6 +1044,37 @@ const styles = StyleSheet.create({
   },
   filterChipTextActive: {
     color: '#ffffff',
+  },
+  modalActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#f8fafc',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+  modalReportCount: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.slate500,
+  },
+  exportCsvBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  exportCsvBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.primaryDark,
   },
   modalCenter: {
     flex: 1,
