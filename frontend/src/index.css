@@ -1,0 +1,188 @@
+@import 'leaflet/dist/leaflet.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col selection:bg-teal-500 selection:text-white;
+  }
+}
+
+/* Custom styling for Leaflet inside cards, main map, and modals */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  background: #e2f1f1 !important;
+  font-family: inherit;
+  z-index: 10;
+}
+
+/* Custom styled Leaflet zoom controls to match clean modern UI */
+.leaflet-bar {
+  border: none !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08) !important;
+  border-radius: 0.75rem !important;
+  overflow: hidden;
+}
+
+.leaflet-bar a {
+  background-color: #ffffff !important;
+  color: #0f766e !important;
+  border-bottom: 1px solid #f1f5f9 !important;
+  width: 34px !important;
+  height: 34px !important;
+  line-height: 34px !important;
+  font-weight: bold !important;
+  transition: all 0.15s ease-in-out;
+}
+
+.leaflet-bar a:hover {
+  background-color: #f0fdfa !important;
+  color: #0d9488 !important;
+}
+
+/* Pulsing radar circles matching Reference Image 2 & 3 */
+@keyframes radarOrangePulse {
+  0% {
+    transform: scale(0.65);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0.25;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+@keyframes radarTealPulse {
+  0% {
+    transform: scale(0.65);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0.25;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.marker-pulse-orange {
+  position: absolute;
+  top: -16px;
+  left: -16px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(249, 115, 22, 0.45) 0%, rgba(249, 115, 22, 0.15) 60%, rgba(249, 115, 22, 0) 100%);
+  animation: radarOrangePulse 2.4s infinite cubic-bezier(0.215, 0.61, 0.355, 1);
+  pointer-events: none;
+}
+
+.marker-pulse-teal {
+  position: absolute;
+  top: -16px;
+  left: -16px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(13, 148, 136, 0.45) 0%, rgba(13, 148, 136, 0.15) 60%, rgba(13, 148, 136, 0) 100%);
+  animation: radarTealPulse 2.4s infinite cubic-bezier(0.215, 0.61, 0.355, 1);
+  pointer-events: none;
+}
+
+.marker-pulse-emerald {
+  position: absolute;
+  top: -16px;
+  left: -16px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.45) 0%, rgba(16, 185, 129, 0.15) 60%, rgba(16, 185, 129, 0) 100%);
+  animation: radarTealPulse 2.4s infinite cubic-bezier(0.215, 0.61, 0.355, 1);
+  pointer-events: none;
+}
+
+/* Custom Marker Callout Pill styling */
+.custom-marker-wrapper {
+  position: relative;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.marker-callout-pill {
+  position: absolute;
+  bottom: 30px;
+  white-space: nowrap;
+  background: #ffffff;
+  color: #0f172a;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+  transition: transform 0.2s ease;
+}
+
+.marker-callout-pill::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 4px solid #ffffff;
+}
+
+/* Glassmorphism helpers */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 232, 240, 0.85);
+}
+
+.glass-mint {
+  background: rgba(240, 253, 250, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(153, 246, 228, 0.6);
+}
+
+/* Smooth custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

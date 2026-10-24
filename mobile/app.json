@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "JalaWatch",
+    "slug": "jalawatch-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "jalawatch",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#F2FAF7"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.jalawatch.mobile",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "JalaWatch uses your location to help you pinpoint groundwater concerns on the map.",
+        "NSPhotoLibraryUsageDescription": "Attach photo evidence of discoloured borewells or drainage seepage."
+      }
+    },
+    "android": {
+      "package": "com.jalawatch.mobile",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#0d9488",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar"
+    ],
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "148bdbc3-fd67-4518-b310-6421e489ac8c"
+      }
+    },
+    "owner": "eswar_8328198233"
+  }
+}

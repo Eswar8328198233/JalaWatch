@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Python Virtual Environments & Bytecode
+venv/
+*/venv/
+.venv/
+*/.venv/
+__pycache__/
+*/__pycache__/
+*.py[cod]
+*$py.class
+*.env.local
+
+# Expo & React Native Build Artifacts
+.expo/
+*/.expo/
+dist/
+*/dist/
+web-build/
+*/web-build/
+*.tsbuildinfo
+
+# Android Native Builds & Gradle Caches
+.gradle/
+*/.gradle/
+build/
+*/build/
+app/build/
+*/app/build/
+.cxx/
+*/.cxx/
+*.apk
+*.aab
+*.jks
+*.keystore
+
+# IDE & OS Files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# Uploads & Temporary Cache (optional if preserving demo uploads)
+uploads/*.tmp
