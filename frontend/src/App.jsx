@@ -13,8 +13,14 @@ import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import { ShieldAlert, X } from 'lucide-react';
 
+const BASE_PATH = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
+
 function getPageFromUrl() {
-  const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+  let path = window.location.pathname;
+  if (BASE_PATH && path.toLowerCase().startsWith(BASE_PATH.toLowerCase())) {
+    path = path.slice(BASE_PATH.length);
+  }
+  path = path.replace(/^\/+|\/+$/g, '').toLowerCase();
   const hash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
   const target = hash || path;
   if (target === 'report' || target === 'report-issue') return 'report';
@@ -27,15 +33,17 @@ function getPageFromUrl() {
 }
 
 function getPathForPage(page) {
+  let sub = '/';
   switch (page) {
-    case 'report': return '/report';
-    case 'reports': return '/reports';
-    case 'safety': return '/safety';
-    case 'about': return '/about';
-    case 'admin-login': return '/admin';
-    case 'admin-dashboard': return '/admin-dashboard';
-    default: return '/';
+    case 'report': sub = '/report'; break;
+    case 'reports': sub = '/reports'; break;
+    case 'safety': sub = '/safety'; break;
+    case 'about': sub = '/about'; break;
+    case 'admin-login': sub = '/admin'; break;
+    case 'admin-dashboard': sub = '/admin-dashboard'; break;
+    default: sub = '/'; break;
   }
+  return `${BASE_PATH}${sub}`.replace(/\/+/g, '/') || '/';
 }
 
 function AppContent() {
