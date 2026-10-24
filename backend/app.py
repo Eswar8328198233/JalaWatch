@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-from database import get_db, init_db
+from database import get_db, init_db, get_engine_name
 from auth import (
     hash_password,
     verify_password,
@@ -20,6 +20,33 @@ from auth import (
     admin_required
 )
 from seed_data import seed
+
+# Cloudinary Integration (optional durable object storage)
+try:
+    import cloudinary
+    import cloudinary.uploader
+    CLOUDINARY_AVAILABLE = True
+except ImportError:
+    CLOUDINARY_AVAILABLE = False
+
+def is_cloudinary_configured():
+    return bool(
+        CLOUDINARY_AVAILABLE and (
+            os.environ.get("CLOUDINARY_URL") or (
+                os.environ.get("CLOUDINARY_CLOUD_NAME") and
+                os.environ.get("CLOUDINARY_API_KEY") and
+                os.environ.get("CLOUDINARY_API_SECRET")
+            )
+        )
+    )
+
+if is_cloudinary_configured() and os.environ.get("CLOUDINARY_CLOUD_NAME"):
+    cloudinary.config(
+        cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
+        api_key=os.environ.get("CLOUDINARY_API_KEY"),
+        api_secret=os.environ.get("CLOUDINARY_API_SECRET"),
+        secure=True
+    )
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -109,6 +136,8 @@ def health_check():
     return jsonify({
         "status": "healthy" if is_healthy else "unhealthy",
         "database": db_status,
+        "database_engine": get_engine_name(),
+        "storage": "cloudinary" if is_cloudinary_configured() else "local_disk",
         "total_reports": report_count,
         "service": "JalaWatch Groundwater Pollution Reporting API",
         "version": "1.0.0",
@@ -307,11 +336,27 @@ def submit_report():
             if size > MAX_CONTENT_LENGTH:
                 errors["photo"] = "Photo size exceeds the maximum limit of 5MB."
             else:
-                ext = file.filename.rsplit(".", 1)[1].lower()
-                clean_filename = f"{uuid.uuid4().hex}.{ext}"
-                save_path = os.path.join(app.config["UPLOAD_FOLDER"], clean_filename)
-                file.save(save_path)
-                photo_url = f"/uploads/{clean_filename}"
+                if is_cloudinary_configured():
+                    try:
+                        upload_res = cloudinary.uploader.upload(
+                            file,
+                            folder="jalawatch_reports",
+                            resource_type="image",
+                            allowed_formats=["jpg", "jpeg", "png", "webp"],
+                            transformation=[{"quality": "auto", "fetch_format": "auto"}]
+                        )
+                        photo_url = upload_res.get("secure_url")
+                    except Exception as e:
+                        print(f"[Cloudinary Warning] Upload failed: {e}. Falling back to disk storage.")
+                        file.seek(0)
+
+                # Fallback to local disk storage if Cloudinary not configured or upload failed
+                if not photo_url:
+                    ext = file.filename.rsplit(".", 1)[1].lower()
+                    clean_filename = f"{uuid.uuid4().hex}.{ext}"
+                    save_path = os.path.join(app.config["UPLOAD_FOLDER"], clean_filename)
+                    file.save(save_path)
+                    photo_url = f"/uploads/{clean_filename}"
 
     if errors:
         return jsonify({"error": "Validation failed", "details": errors}), 400

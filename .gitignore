@@ -12,6 +12,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.env.local
+.env
+*/.env
+*.env
+backend/backups/
 
 # Expo & React Native Build Artifacts
 .expo/

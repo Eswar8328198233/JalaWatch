@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Calendar, MapPin, Droplet, ShieldAlert, CheckCircle, Clock, ExternalLink, Copy, Check } from 'lucide-react';
 import { useState } from 'react';
+import { getPhotoUrl } from '../services/api';
 
 export default function ReportDetailModal({ report, onClose, onNavigateSafety }) {
   const [copied, setCopied] = useState(false);
@@ -132,9 +133,10 @@ export default function ReportDetailModal({ report, onClose, onNavigateSafety })
               </h4>
               <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-100 max-h-72">
                 <img
-                  src={report.photo_url}
+                  src={getPhotoUrl(report.photo_url)}
                   alt="Pollution report evidence"
                   className="w-full h-auto object-cover max-h-72 hover:scale-105 transition-transform duration-300"
+                  loading="lazy"
                 />
               </div>
             </div>

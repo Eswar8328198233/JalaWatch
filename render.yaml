@@ -1,0 +1,50 @@
+services:
+  # -------------------------------------------------------------
+  # JalaWatch Web Frontend (Static Site on Render)
+  # -------------------------------------------------------------
+  - type: static
+    name: jalawatch-web
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        value: https://jalawatch.onrender.com
+
+  # -------------------------------------------------------------
+  # JalaWatch Backend API (Flask + Gunicorn on Render)
+  # -------------------------------------------------------------
+  - type: web
+    name: jalawatch-backend
+    rootDir: backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120
+    healthCheckPath: /api/health
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: FLASK_DEBUG
+        value: "0"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_PATH
+        value: jalawatch.db
+      - key: UPLOAD_FOLDER
+        value: uploads
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_EMAIL
+        value: admin@jalawatch.org
+      # Optional: set DATABASE_URL if using managed PostgreSQL (Supabase / Render Postgres / Neon)
+      # - key: DATABASE_URL
+      #   sync: false
+      # Optional: set CLOUDINARY_URL for durable cloud image persistence
+      # - key: CLOUDINARY_URL
+      #   sync: false

@@ -6,6 +6,7 @@ import {
   MapPin, Calendar, ExternalLink, X, ChevronRight, Navigation,
   Layers, Compass, Info, Filter, Search, Sparkles
 } from 'lucide-react';
+import { getPhotoUrl } from '../services/api';
 
 // Custom Marker Generator with Pulsing Concentric Halos & Callout Pills
 const createPulsingIcon = (report, isSelected) => {
@@ -353,9 +354,10 @@ export default function InteractiveLiveMap({
           {selectedReport.photo_url && (
             <div className="mt-3 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 max-h-36">
               <img
-                src={selectedReport.photo_url}
+                src={getPhotoUrl(selectedReport.photo_url)}
                 alt="Evidence"
                 className="w-full h-full object-cover"
+                loading="lazy"
               />
             </div>
           )}

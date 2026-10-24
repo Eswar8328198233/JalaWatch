@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
 import Navbar from './components/Navbar';
@@ -13,11 +13,60 @@ import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import { ShieldAlert, X } from 'lucide-react';
 
+function getPageFromUrl() {
+  const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+  const hash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
+  const target = hash || path;
+  if (target === 'report' || target === 'report-issue') return 'report';
+  if (target === 'reports' || target === 'community-reports') return 'reports';
+  if (target === 'safety' || target === 'water-safety') return 'safety';
+  if (target === 'about') return 'about';
+  if (target === 'admin' || target === 'admin-login') return 'admin-login';
+  if (target === 'admin-dashboard' || target === 'dashboard') return 'admin-dashboard';
+  return 'home';
+}
+
+function getPathForPage(page) {
+  switch (page) {
+    case 'report': return '/report';
+    case 'reports': return '/reports';
+    case 'safety': return '/safety';
+    case 'about': return '/about';
+    case 'admin-login': return '/admin';
+    case 'admin-dashboard': return '/admin-dashboard';
+    default: return '/';
+  }
+}
+
 function AppContent() {
   const [showIntro, setShowIntro] = useState(true);
-  const [activePage, setActivePage] = useState('home');
+  const [activePage, setActivePageRaw] = useState(() => getPageFromUrl());
   const [initialReportToView, setInitialReportToView] = useState(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  const setActivePage = (page, replace = false) => {
+    setActivePageRaw(page);
+    const newPath = getPathForPage(page);
+    if (window.location.pathname !== newPath) {
+      if (replace) {
+        window.history.replaceState({ page }, '', newPath);
+      } else {
+        window.history.pushState({ page }, '', newPath);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setActivePageRaw(getPageFromUrl());
+    };
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('hashchange', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('hashchange', handlePopState);
+    };
+  }, []);
 
   const handleSelectReportFromHome = (report) => {
     setInitialReportToView(report);

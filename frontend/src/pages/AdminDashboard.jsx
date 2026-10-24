@@ -11,7 +11,8 @@ import {
   updateAdminReportStatus, 
   deleteAdminReport,
   getStats,
-  getExportUrl
+  getExportUrl,
+  getPhotoUrl
 } from '../services/api';
 
 export default function AdminDashboard({ setActivePage }) {
@@ -507,7 +508,7 @@ export default function AdminDashboard({ setActivePage }) {
               {selectedReport.photo_url && (
                 <div>
                   <span className="font-bold text-slate-700 block mb-1">Uploaded Photo:</span>
-                  <img src={selectedReport.photo_url} alt="Proof" className="w-full rounded-xl max-h-64 object-cover border" />
+                  <img src={getPhotoUrl(selectedReport.photo_url)} alt="Proof" className="w-full rounded-xl max-h-64 object-cover border" loading="lazy" />
                 </div>
               )}
 

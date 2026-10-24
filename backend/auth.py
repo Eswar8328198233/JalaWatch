@@ -42,14 +42,22 @@ def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         auth_header = request.headers.get("Authorization", None)
-        if not auth_header:
-            return jsonify({"error": "Authorization token required", "code": "UNAUTHORIZED"}), 401
-        
-        parts = auth_header.split()
-        if len(parts) != 2 or parts[0].lower() != "bearer":
-            return jsonify({"error": "Invalid Authorization header format. Expected 'Bearer <token>'", "code": "INVALID_TOKEN_FORMAT"}), 401
+        token = None
 
-        token = parts[1]
+        if auth_header:
+            parts = auth_header.split()
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                token = parts[1]
+            else:
+                return jsonify({"error": "Invalid Authorization header format. Expected 'Bearer <token>'", "code": "INVALID_TOKEN_FORMAT"}), 401
+        
+        # Fallback to query parameter (e.g. for browser file downloads like /api/admin/export?token=...)
+        if not token:
+            token = request.args.get("token", None)
+
+        if not token:
+            return jsonify({"error": "Authorization token required", "code": "UNAUTHORIZED"}), 401
+
         decoded = decode_jwt_token(token)
         if not decoded:
             return jsonify({"error": "Invalid or expired authorization token", "code": "TOKEN_EXPIRED_OR_INVALID"}), 401

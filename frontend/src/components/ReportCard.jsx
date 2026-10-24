@@ -1,5 +1,6 @@
 import React from 'react';
 import { MapPin, Calendar, CheckCircle, Clock, Droplets, Image as ImageIcon, ChevronRight } from 'lucide-react';
+import { getPhotoUrl } from '../services/api';
 
 export default function ReportCard({ report, onSelect }) {
   const getCategoryBadge = (cat) => {
@@ -90,9 +91,10 @@ export default function ReportCard({ report, onSelect }) {
         {report.photo_url && (
           <div className="relative h-28 rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 mt-2">
             <img
-              src={report.photo_url}
+              src={getPhotoUrl(report.photo_url)}
               alt="Proof"
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              loading="lazy"
             />
             <div className="absolute bottom-1.5 right-1.5 bg-black/60 text-white text-[10px] px-2 py-0.5 rounded-full backdrop-blur-sm flex items-center gap-1">
               <ImageIcon className="w-3 h-3" /> Photo Attached
