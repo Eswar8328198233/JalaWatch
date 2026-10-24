@@ -14,12 +14,14 @@ services:
     envVars:
       - key: VITE_API_URL
         value: https://jalawatch.onrender.com
+      - key: VITE_BASE_PATH
+        value: /
 
   # -------------------------------------------------------------
   # JalaWatch Backend API (Flask + Gunicorn on Render)
   # -------------------------------------------------------------
   - type: web
-    name: jalawatch-backend
+    name: jalawatch
     rootDir: backend
     env: python
     buildCommand: pip install -r requirements.txt

@@ -49,7 +49,28 @@ if is_cloudinary_configured() and os.environ.get("CLOUDINARY_CLOUD_NAME"):
     )
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
+
+# Allowed origins for CORS (Render production frontend, GitHub Pages, and local development)
+ALLOWED_ORIGINS = [
+    "https://jalawatch-web.onrender.com",
+    "https://jalawatch.onrender.com",
+    "https://eswar8328198233.github.io",
+    "http://localhost:5173",
+    "http://localhost:5000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5000",
+]
+
+cors_env = os.environ.get("CORS_ORIGINS", "")
+if cors_env:
+    ALLOWED_ORIGINS.extend([o.strip() for o in cors_env.split(",") if o.strip()])
+
+# If CORS_ALLOW_ALL=0 is explicitly configured, use strict whitelist; otherwise allow wildcard
+# to ensure React Native Expo Android app and web previews work smoothly without preflight blocks.
+if os.environ.get("CORS_ALLOW_ALL", "1") == "0":
+    CORS(app, resources={r"/*": {"origins": ALLOWED_ORIGINS}})
+else:
+    CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Configuration
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
