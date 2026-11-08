@@ -1,7 +1,14 @@
 # JalaWatch – Groundwater Pollution Reporting & Awareness Portal
 
-**A Modern Full-Stack Civic Hydrology Application for College Community Service Project (CSP)**  
-*Case Study: Nutakki Village near Vijayawada, Guntur District, Andhra Pradesh*
+> **JalaWatch** is a bilingual, web-based and Android-based Groundwater Pollution Reporting and Awareness Portal developed using **React**, **Vite**, **Python Flask**, **SQLite/PostgreSQL support**, and **React Native with Expo**.
+>
+> The system provides interactive maps, community pollution reporting, GPS-based location selection, photo uploads, report tracking, Telugu and English language support, offline mobile reporting, advanced administrative analytics, activity auditing, and laboratory verification management.
+>
+> The main objective is to help communities report suspected groundwater-related problems, track their reports, and improve awareness about groundwater safety. It also provides administrators with tools to review reports and record official laboratory test results.
+>
+> **Scientific Integrity:** JalaWatch strictly distinguishes between unverified community observations and scientifically verified laboratory results.
+
+**Academic Context:** College Community Service Project (CSP) Field Study – Nutakki Village near Vijayawada, Guntur District, Andhra Pradesh.
 
 ---
 
@@ -75,13 +82,14 @@ During our team's Community Service Project (CSP) field study in **Nutakki Villa
 
 ## 🛠️ Technology Stack
 
-| Layer | Technologies Used |
-|---|---|
-| **Frontend** | React 18, Vite, Tailwind CSS, Lucide React Icons |
-| **Mapping** | Leaflet, React-Leaflet, OpenStreetMap tiles |
-| **Backend** | Python 3, Flask, Flask-CORS, PyJWT, Werkzeug Security, python-dotenv |
-| **Database** | SQLite3 (`jalawatch.db`) with indexes and automatic migration |
-| **Storage** | Safe local file uploads with UUID sanitization and MIME-type verification |
+| Layer | Technologies Used | Notes |
+|---|---|---|
+| **Web Frontend** | React 19.3.1, Vite 8.3.4, Tailwind CSS, Lucide React Icons | Modern SPA with lazy code-splitting and bilingual context |
+| **Mobile Application** | React Native 0.88.0, Expo SDK 58, Expo Router, Lucide Native | Android standalone APK readiness with offline AsyncStorage |
+| **Mapping** | Leaflet, React-Leaflet, OpenStreetMap tiles | Custom radar pulsing markers & GPS selection |
+| **Backend API** | Python 3.11, Flask 3.1.3, Flask-CORS, PyJWT, Werkzeug Security | RESTful modular API with sliding-window rate limiting |
+| **Database** | SQLite3 (`jalawatch.db`) with PostgreSQL Cloud Migration Support | Automated schema migrations preserving 100% of demo data |
+| **File Storage** | Dual-mode: Local disk with binary magic bytes validation & Cloudinary | Pluggable cloud storage with local development fallback |
 
 ---
 
