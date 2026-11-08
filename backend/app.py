@@ -20,6 +20,7 @@ from auth import (
     admin_required
 )
 from seed_data import seed
+from rate_limiter import rate_limit
 
 # Cloudinary Integration (optional durable object storage)
 try:
@@ -107,6 +108,41 @@ VALID_STATUSES = ["Submitted", "Under Review", "Resolved", "Archived"]
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def validate_image_bytes(file_storage):
+    """
+    Verifies file header magic bytes to ensure file is an authentic image (JPEG, PNG, WEBP),
+    preventing spoofed malicious uploads.
+    """
+    header = file_storage.read(16)
+    file_storage.seek(0)
+    if len(header) < 8:
+        return False, None
+    # JPEG: starts with FF D8 FF
+    if header.startswith(b"\xff\xd8\xff"):
+        return True, "jpeg"
+    # PNG: starts with 89 50 4E 47 0D 0A 1A 0A
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return True, "png"
+    # WEBP: starts with RIFF and bytes 8..12 are WEBP
+    if header.startswith(b"RIFF") and header[8:12] == b"WEBP":
+        return True, "webp"
+    return False, None
+
+def log_admin_activity(cursor, admin_id, username, action, report_id=None, previous_status=None, new_status=None, details=None):
+    """Records an audit trail log in admin_activity_logs."""
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        cursor.execute("""
+            INSERT INTO admin_activity_logs (
+                admin_id, username, action, report_id, previous_status, new_status, details, timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            str(admin_id or ""), str(username or "Admin"), action,
+            report_id, previous_status, new_status, details, now_str
+        ))
+    except Exception as e:
+        print(f"[Activity Log Warning] {e}")
+
 def format_report_public(row):
     """Sanitizes report row for public consumption by hiding private admin notes and reporter contacts."""
     d = dict(row)
@@ -192,20 +228,50 @@ def get_stats():
         cursor.execute("SELECT COUNT(DISTINCT village) as count FROM reports")
         villages_count = cursor.fetchone()["count"]
 
+        cursor.execute("SELECT COUNT(*) as count FROM reports WHERE is_verified = 1")
+        verified_count = cursor.fetchone()["count"]
+
         cursor.execute("SELECT category, COUNT(*) as count FROM reports GROUP BY category ORDER BY count DESC")
         category_breakdown = [{"category": row["category"], "count": row["count"]} for row in cursor.fetchall()]
 
-        cursor.execute("SELECT village, COUNT(*) as count FROM reports GROUP BY village ORDER BY count DESC LIMIT 5")
+        cursor.execute("SELECT village, COUNT(*) as count FROM reports GROUP BY village ORDER BY count DESC LIMIT 8")
         top_villages = [{"village": row["village"], "count": row["count"]} for row in cursor.fetchall()]
+
+        # Monthly report trends for analytical charts
+        cursor.execute("""
+            SELECT SUBSTR(date_observed, 1, 7) as month, COUNT(*) as count
+            FROM reports
+            WHERE date_observed IS NOT NULL AND length(date_observed) >= 7
+            GROUP BY month
+            ORDER BY month ASC
+            LIMIT 12
+        """)
+        monthly_trends = [{"month": row["month"], "count": row["count"]} for row in cursor.fetchall()]
+
+        # Water source breakdown
+        cursor.execute("""
+            SELECT water_source, COUNT(*) as count
+            FROM reports
+            WHERE water_source IS NOT NULL AND water_source != ''
+            GROUP BY water_source
+            ORDER BY count DESC
+        """)
+        water_sources = [{"source": row["water_source"], "count": row["count"]} for row in cursor.fetchall()]
+
+    resolution_rate = round((resolved / total * 100), 1) if total > 0 else 0.0
 
     return jsonify({
         "total_reports": total,
         "submitted": submitted,
         "under_review": under_review,
         "resolved": resolved,
+        "verified_reports": verified_count,
+        "resolution_rate": resolution_rate,
         "villages_impacted": villages_count,
         "category_breakdown": category_breakdown,
-        "top_villages": top_villages
+        "top_villages": top_villages,
+        "monthly_trends": monthly_trends,
+        "water_sources": water_sources
     }), 200
 
 @app.route("/api/reports", methods=["GET"])
@@ -215,6 +281,8 @@ def get_reports():
     category = request.args.get("category", "").strip()
     village = request.args.get("village", "").strip()
     status = request.args.get("status", "").strip()
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
     page = max(1, int(request.args.get("page", 1)))
     limit = min(100, max(1, int(request.args.get("limit", 20))))
     offset = (page - 1) * limit
@@ -243,6 +311,16 @@ def get_reports():
         query += " AND status = ?"
         count_query += " AND status = ?"
         params.append(status)
+
+    if date_from:
+        query += " AND date_observed >= ?"
+        count_query += " AND date_observed >= ?"
+        params.append(date_from)
+
+    if date_to:
+        query += " AND date_observed <= ?"
+        count_query += " AND date_observed <= ?"
+        params.append(date_to)
 
     with get_db() as conn:
         cursor = conn.cursor()
@@ -286,6 +364,7 @@ def get_report_detail(report_id):
     return jsonify({"report": format_report_public(row)}), 200
 
 @app.route("/api/reports", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=300, key_prefix="report_submit", custom_message="Report submission rate limit reached (max 10 submissions per 5 minutes per IP). Please try again shortly.")
 def submit_report():
     """Allows community members to report an issue without requiring login."""
     # Support both multipart form data (with file) and json
@@ -350,26 +429,30 @@ def submit_report():
         if not allowed_file(file.filename):
             errors["photo"] = "Allowed photo formats: .jpg, .jpeg, .png, .webp."
         else:
-            # Check length/size safely
-            file.seek(0, os.SEEK_END)
-            size = file.tell()
-            file.seek(0)
-            if size > MAX_CONTENT_LENGTH:
-                errors["photo"] = "Photo size exceeds the maximum limit of 5MB."
+            is_valid_magic, detected_format = validate_image_bytes(file)
+            if not is_valid_magic:
+                errors["photo"] = "Uploaded file content signature does not match an authentic image format (JPEG, PNG, WEBP)."
             else:
-                if is_cloudinary_configured():
-                    try:
-                        upload_res = cloudinary.uploader.upload(
-                            file,
-                            folder="jalawatch_reports",
-                            resource_type="image",
-                            allowed_formats=["jpg", "jpeg", "png", "webp"],
-                            transformation=[{"quality": "auto", "fetch_format": "auto"}]
-                        )
-                        photo_url = upload_res.get("secure_url")
-                    except Exception as e:
-                        print(f"[Cloudinary Warning] Upload failed: {e}. Falling back to disk storage.")
-                        file.seek(0)
+                # Check length/size safely
+                file.seek(0, os.SEEK_END)
+                size = file.tell()
+                file.seek(0)
+                if size > MAX_CONTENT_LENGTH:
+                    errors["photo"] = "Photo size exceeds the maximum limit of 5MB."
+                else:
+                    if is_cloudinary_configured():
+                        try:
+                            upload_res = cloudinary.uploader.upload(
+                                file,
+                                folder="jalawatch_reports",
+                                resource_type="image",
+                                allowed_formats=["jpg", "jpeg", "png", "webp"],
+                                transformation=[{"quality": "auto", "fetch_format": "auto"}]
+                            )
+                            photo_url = upload_res.get("secure_url")
+                        except Exception as e:
+                            print(f"[Cloudinary Warning] Upload failed: {e}. Falling back to disk storage.")
+                            file.seek(0)
 
                 # Fallback to local disk storage if Cloudinary not configured or upload failed
                 if not photo_url:
@@ -411,6 +494,7 @@ def submit_report():
 # ----------------- ADMIN AUTH & MANAGEMENT ----------------- #
 
 @app.route("/api/auth/login", methods=["POST"])
+@rate_limit(max_requests=5, window_seconds=60, key_prefix="admin_login", custom_message="Too many failed login attempts. Please wait 1 minute before retrying.")
 def admin_login():
     """Authenticates administrator and returns a JWT token."""
     data = request.get_json() or {}
@@ -533,6 +617,19 @@ def admin_update_report_status(report_id):
         update_query = f"UPDATE reports SET {', '.join(updates)} WHERE id = ?"
         cursor.execute(update_query, params)
 
+        # Log admin activity
+        admin_user = request.admin
+        log_admin_activity(
+            cursor,
+            admin_user.get("sub"),
+            admin_user.get("username"),
+            "STATUS_UPDATE",
+            report_id,
+            existing["status"],
+            new_status or existing["status"],
+            f"Updated status to '{new_status or existing['status']}'. Verified: {is_verified}."
+        )
+
         cursor.execute("SELECT * FROM reports WHERE id = ?", (report_id,))
         updated_row = cursor.fetchone()
 
@@ -540,6 +637,122 @@ def admin_update_report_status(report_id):
         "message": "Report status updated successfully",
         "report": format_report_admin(updated_row)
     }), 200
+
+@app.route("/api/admin/reports/<report_id>/lab-test", methods=["PUT"])
+@admin_required
+def admin_record_lab_test(report_id):
+    """Admin endpoint: logs certified laboratory water testing results with strict validation."""
+    data = request.get_json() or {}
+    
+    # Extract laboratory parameters
+    ph = data.get("ph")
+    tds = data.get("tds")
+    fluoride = data.get("fluoride")
+    nitrate = data.get("nitrate")
+    e_coli = data.get("e_coli", "").strip() if data.get("e_coli") is not None else None
+    lab_name = data.get("lab_name", "").strip()
+    testing_date = data.get("testing_date", "").strip()
+    lab_certificate_url = data.get("lab_certificate_url", "").strip()
+    lab_notes = data.get("lab_notes", "").strip()
+    lab_status = data.get("lab_status", "Tested").strip()
+    is_verified = bool(data.get("is_verified", True))
+
+    # Validate physical parameters if provided
+    errors = {}
+    if ph is not None:
+        try:
+            ph = float(ph)
+            if ph < 0 or ph > 14:
+                errors["ph"] = "pH must be between 0.0 and 14.0"
+        except (ValueError, TypeError):
+            errors["ph"] = "Invalid pH value (must be a number)"
+
+    if tds is not None:
+        try:
+            tds = float(tds)
+            if tds < 0:
+                errors["tds"] = "TDS must be a positive number in mg/L"
+        except (ValueError, TypeError):
+            errors["tds"] = "Invalid TDS value"
+
+    if fluoride is not None:
+        try:
+            fluoride = float(fluoride)
+            if fluoride < 0:
+                errors["fluoride"] = "Fluoride must be positive in mg/L"
+        except (ValueError, TypeError):
+            errors["fluoride"] = "Invalid Fluoride value"
+
+    if nitrate is not None:
+        try:
+            nitrate = float(nitrate)
+            if nitrate < 0:
+                errors["nitrate"] = "Nitrate must be positive in mg/L"
+        except (ValueError, TypeError):
+            errors["nitrate"] = "Invalid Nitrate value"
+
+    if errors:
+        return jsonify({"error": "Validation failed for laboratory parameters", "details": errors}), 400
+
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM reports WHERE id = ?", (report_id,))
+        existing = cursor.fetchone()
+        if not existing:
+            return jsonify({"error": "Report not found"}), 404
+
+        cursor.execute("""
+            UPDATE reports SET
+                ph = ?, tds = ?, fluoride = ?, nitrate = ?, e_coli = ?,
+                lab_name = ?, testing_date = ?, lab_certificate_url = ?,
+                lab_notes = ?, lab_status = ?, is_verified = ?, updated_at = ?
+            WHERE id = ?
+        """, (
+            ph, tds, fluoride, nitrate, e_coli,
+            lab_name, testing_date, lab_certificate_url,
+            lab_notes, lab_status, 1 if is_verified else 0,
+            now_str, report_id
+        ))
+
+        admin_user = request.admin
+        log_admin_activity(
+            cursor,
+            admin_user.get("sub"),
+            admin_user.get("username"),
+            "LAB_VERIFICATION",
+            report_id,
+            existing["status"],
+            existing["status"],
+            f"Recorded laboratory test from {lab_name or 'NABL/RWS&S Lab'} (pH: {ph}, TDS: {tds}, Status: {lab_status})"
+        )
+
+        cursor.execute("SELECT * FROM reports WHERE id = ?", (report_id,))
+        updated_row = cursor.fetchone()
+
+    return jsonify({
+        "message": "Certified laboratory test results recorded successfully",
+        "report": format_report_admin(updated_row)
+    }), 200
+
+@app.route("/api/admin/logs", methods=["GET"])
+@admin_required
+def admin_get_activity_logs():
+    """Admin endpoint: retrieves immutable audit activity log."""
+    limit = min(100, max(1, int(request.args.get("limit", 50))))
+    report_id = request.args.get("report_id", "").strip()
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if report_id:
+            cursor.execute("SELECT * FROM admin_activity_logs WHERE report_id = ? ORDER BY timestamp DESC LIMIT ?", (report_id, limit))
+        else:
+            cursor.execute("SELECT * FROM admin_activity_logs ORDER BY timestamp DESC LIMIT ?", (limit,))
+        rows = cursor.fetchall()
+
+    logs = [dict(r) for r in rows]
+    return jsonify({"logs": logs, "count": len(logs)}), 200
 
 @app.route("/api/admin/reports/<report_id>", methods=["DELETE"])
 @admin_required
@@ -564,6 +777,19 @@ def admin_delete_report(report_id):
                     pass
 
         cursor.execute("DELETE FROM reports WHERE id = ?", (report_id,))
+
+        # Log admin deletion
+        admin_user = request.admin
+        log_admin_activity(
+            cursor,
+            admin_user.get("sub"),
+            admin_user.get("username"),
+            "REPORT_DELETED",
+            report_id,
+            "Existing",
+            "Deleted",
+            f"Admin permanently deleted report {report_id} and associated file assets."
+        )
 
     return jsonify({"message": f"Report {report_id} deleted successfully"}), 200
 

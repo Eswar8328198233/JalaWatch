@@ -51,8 +51,10 @@ import {
   AdminUser,
   AdminReport,
 } from '../../services/api';
+import { getSavedLanguage, saveLanguage, LanguageCode } from '../../constants/translations';
 
 export default function AboutScreen() {
+  const [currentLang, setCurrentLang] = useState<LanguageCode>('en');
   const [serverStatus, setServerStatus] = useState<'checking' | 'online' | 'offline'>('checking');
   const [serverPingTime, setServerPingTime] = useState<number | null>(null);
   const [activeUrl, setActiveUrl] = useState(getApiBaseUrl());
@@ -92,7 +94,14 @@ export default function AboutScreen() {
 
   useEffect(() => {
     checkHealth();
+    getSavedLanguage().then((l) => setCurrentLang(l));
   }, [checkHealth]);
+
+  const handleChangeLanguage = async (newLang: LanguageCode) => {
+    setCurrentLang(newLang);
+    await saveLanguage(newLang);
+    Alert.alert('Language Updated', newLang === 'te' ? 'యాప్ భాష తెలుగుగా మార్చబడింది.' : 'Application language set to English.');
+  };
 
   // Admin login handler
   const handleAdminLogin = async () => {
@@ -213,6 +222,42 @@ export default function AboutScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Language Selection Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Globe size={18} color={Colors.primary} strokeWidth={2.4} />
+            <Text style={styles.cardTitle}>Language / భాష</Text>
+          </View>
+          <Text style={styles.bodyText}>
+            Select your preferred display language for reporting, maps, and offline records:
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+            <TouchableOpacity
+              onPress={() => handleChangeLanguage('en')}
+              style={[
+                styles.langBtn,
+                currentLang === 'en' && styles.langBtnActive
+              ]}
+            >
+              <Text style={[styles.langBtnText, currentLang === 'en' && styles.langBtnTextActive]}>
+                English
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => handleChangeLanguage('te')}
+              style={[
+                styles.langBtn,
+                currentLang === 'te' && styles.langBtnActive
+              ]}
+            >
+              <Text style={[styles.langBtnText, currentLang === 'te' && styles.langBtnTextActive]}>
+                తెలుగు (Telugu)
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Project Overview Card */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
@@ -1286,5 +1331,28 @@ const styles = StyleSheet.create({
   cancelNotesBtnText: {
     color: Colors.slate500,
     fontSize: 11,
+  },
+  langBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#ffffff',
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  langBtnActive: {
+    backgroundColor: '#f0fdfa',
+    borderColor: Colors.primary,
+  },
+  langBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.slate700,
+  },
+  langBtnTextActive: {
+    color: Colors.primaryDark,
   },
 });

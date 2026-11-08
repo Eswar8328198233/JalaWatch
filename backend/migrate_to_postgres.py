@@ -109,7 +109,31 @@ def migrate():
             admin_notes TEXT,
             created_at VARCHAR(100) NOT NULL,
             updated_at VARCHAR(100) NOT NULL,
-            is_demo INTEGER DEFAULT 0
+            is_demo INTEGER DEFAULT 0,
+            ph DOUBLE PRECISION,
+            tds DOUBLE PRECISION,
+            fluoride DOUBLE PRECISION,
+            nitrate DOUBLE PRECISION,
+            e_coli VARCHAR(50),
+            lab_name VARCHAR(255),
+            testing_date VARCHAR(50),
+            lab_certificate_url VARCHAR(1000),
+            lab_notes TEXT,
+            lab_status VARCHAR(50) DEFAULT 'Not Tested'
+        );
+    """)
+
+    pg_cursor.execute("""
+        CREATE TABLE IF NOT EXISTS admin_activity_logs (
+            id SERIAL PRIMARY KEY,
+            admin_id VARCHAR(100),
+            username VARCHAR(100),
+            action VARCHAR(100) NOT NULL,
+            report_id VARCHAR(50),
+            previous_status VARCHAR(50),
+            new_status VARCHAR(50),
+            details TEXT,
+            timestamp VARCHAR(100) NOT NULL
         );
     """)
 
@@ -117,6 +141,8 @@ def migrate():
     pg_cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_category ON reports(category);")
     pg_cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);")
     pg_cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_created ON reports(created_at DESC);")
+    pg_cursor.execute("CREATE INDEX IF NOT EXISTS idx_activity_created ON admin_activity_logs(timestamp DESC);")
+    pg_cursor.execute("CREATE INDEX IF NOT EXISTS idx_activity_report ON admin_activity_logs(report_id);")
     pg_conn.commit()
 
     # Step 3: Migrate Admins (idempotent)
@@ -144,13 +170,18 @@ def migrate():
                     id, village, category, water_source, date_observed, landmark,
                     description, photo_url, latitude, longitude, reporter_name,
                     reporter_contact, status, is_verified, admin_notes,
-                    created_at, updated_at, is_demo
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    created_at, updated_at, is_demo,
+                    ph, tds, fluoride, nitrate, e_coli, lab_name, testing_date,
+                    lab_certificate_url, lab_notes, lab_status
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 r["id"], r["village"], r["category"], r["water_source"], r["date_observed"],
                 r["landmark"], r["description"], r["photo_url"], r["latitude"], r["longitude"],
                 r["reporter_name"], r["reporter_contact"], r["status"], r["is_verified"],
-                r["admin_notes"], r["created_at"], r["updated_at"], r["is_demo"]
+                r["admin_notes"], r["created_at"], r["updated_at"], r["is_demo"],
+                r.get("ph"), r.get("tds"), r.get("fluoride"), r.get("nitrate"), r.get("e_coli"),
+                r.get("lab_name"), r.get("testing_date"), r.get("lab_certificate_url"),
+                r.get("lab_notes"), r.get("lab_status", "Not Tested")
             ))
             migrated_reports += 1
         else:

@@ -1,11 +1,31 @@
 import jwt
 import os
+import secrets
 import datetime
 from functools import wraps
 from flask import request, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 
-SECRET_KEY = os.environ.get("SECRET_KEY", "jalawatch_secret_key_change_in_production_csp_2026")
+def get_secret_key() -> str:
+    """
+    Returns the application SECRET_KEY.
+    In production (e.g. Render/Railway), if SECRET_KEY is missing or remains the default placeholder,
+    logs a prominent security alert and uses a cryptographically generated 256-bit key to prevent token forgery.
+    """
+    key = os.environ.get("SECRET_KEY")
+    is_prod = os.environ.get("FLASK_ENV") == "production" or os.environ.get("RENDER") is not None
+
+    if not key or key == "jalawatch_secret_key_change_in_production_csp_2026":
+        if is_prod:
+            print("[SECURITY WARNING] Insecure or missing SECRET_KEY in production! Generating secure 256-bit ephemeral key.")
+            # Cache ephemeral key in environment for server lifecycle
+            key = secrets.token_hex(32)
+            os.environ["SECRET_KEY"] = key
+        else:
+            key = key or "jalawatch_dev_secret_key_local_only"
+    return key
+
+SECRET_KEY = get_secret_key()
 JWT_EXPIRATION_HOURS = 24
 
 def hash_password(password: str) -> str:

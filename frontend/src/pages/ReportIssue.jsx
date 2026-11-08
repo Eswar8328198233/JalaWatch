@@ -6,9 +6,11 @@ import {
 import LocationPickerMap from '../components/LocationPickerMap';
 import { submitReport } from '../services/api';
 import { useToast } from '../context/ToastContext';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function ReportIssue({ setActivePage, onReportCreated }) {
   const { addToast } = useToast();
+  const { t } = useLanguage();
 
   const [formData, setFormData] = useState({
     village: 'Nutakki',
@@ -281,10 +283,10 @@ export default function ReportIssue({ setActivePage, onReportCreated }) {
           <span>Groundwater Concern Reporting Form</span>
         </div>
         <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 font-['Outfit']">
-          Report a Groundwater Concern
+          {t('form_title')}
         </h1>
         <p className="text-sm text-slate-600 max-w-xl mx-auto">
-          Help map water anomalies, blackish borewells, and wastewater stagnation across Nutakki and surrounding villages. No mandatory personal identification is required.
+          {t('form_subtitle')}
         </p>
       </div>
 
@@ -547,12 +549,12 @@ export default function ReportIssue({ setActivePage, onReportCreated }) {
             {submitting ? (
               <>
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Recording Report...</span>
+                <span>{t('form_submitting')}</span>
               </>
             ) : (
               <>
                 <AlertTriangle className="w-4 h-4" />
-                <span>Submit Report to Community Portal</span>
+                <span>{t('form_submit_btn')}</span>
               </>
             )}
           </button>

@@ -98,6 +98,8 @@ export async function getReports(filters = {}) {
   if (filters.category && filters.category !== 'All') params.append('category', filters.category);
   if (filters.village && filters.village !== 'All') params.append('village', filters.village);
   if (filters.status && filters.status !== 'All') params.append('status', filters.status);
+  if (filters.date_from) params.append('date_from', filters.date_from);
+  if (filters.date_to) params.append('date_to', filters.date_to);
   if (filters.page) params.append('page', filters.page);
   if (filters.limit) params.append('limit', filters.limit);
 
@@ -148,6 +150,24 @@ export async function updateAdminReportStatus(token, reportId, payload) {
     method: 'PUT',
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAdminLabTest(token, reportId, payload) {
+  return request(`/api/admin/reports/${reportId}/lab-test`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getAdminLogs(token, filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.report_id) params.append('report_id', filters.report_id);
+  if (filters.limit) params.append('limit', filters.limit);
+  const queryString = params.toString() ? `?${params.toString()}` : '';
+  return request(`/api/admin/logs${queryString}`, {
+    headers: { Authorization: `Bearer ${token}` },
   });
 }
 

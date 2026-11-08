@@ -6,8 +6,11 @@ import {
 } from 'lucide-react';
 import { getStats, getReports } from '../services/api';
 import InteractiveLiveMap from '../components/InteractiveLiveMap';
+import TrackReportWidget from '../components/TrackReportWidget';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function Home({ setActivePage, onSelectReport }) {
+  const { t } = useLanguage();
   const [stats, setStats] = useState({
     total_reports: 0,
     submitted: 0,
@@ -29,7 +32,7 @@ export default function Home({ setActivePage, onSelectReport }) {
         if (statsData) setStats(statsData);
         if (reportsData && reportsData.reports) {
           setReports(reportsData.reports);
-          // By default, select the first report so user immediately sees the floating details panel (like in Reference 3)
+          // By default, select the first report so user immediately sees the floating details panel
           if (reportsData.reports.length > 0) {
             setSelectedMapReport(reportsData.reports[0]);
           }
@@ -45,7 +48,7 @@ export default function Home({ setActivePage, onSelectReport }) {
 
   const handleCardClick = (report) => {
     setSelectedMapReport(report);
-    window.scrollTo({ top: 120, behavior: 'smooth' });
+    window.scrollTo({ top: 400, behavior: 'smooth' });
   };
 
   return (
@@ -60,14 +63,14 @@ export default function Home({ setActivePage, onSelectReport }) {
             <div className="space-y-1.5 max-w-2xl">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-teal-200 shadow-xs text-[11px] text-teal-800 font-bold">
                 <span className="w-2 h-2 rounded-full bg-teal-500 animate-ping" />
-                <span>Nutakki Village Community Service Project (CSP) • Live Aquifer Monitor</span>
+                <span>{t('hero_pill')}</span>
               </div>
               <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-slate-900 font-['Outfit']">
-                Protect Groundwater.{' '}
-                <span className="text-teal-700">Make Concerns Visible.</span>
+                {t('hero_title')}{' '}
+                <span className="text-teal-700">{t('hero_title_highlight')}</span>
               </h1>
               <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                Explore community-logged groundwater discoloration, wastewater seepage, and drainage concerns across Nutakki Village and surrounding mandals.
+                {t('hero_desc')}
               </p>
             </div>
 
@@ -78,7 +81,7 @@ export default function Home({ setActivePage, onSelectReport }) {
                 className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs shadow-md shadow-teal-600/20 transition-transform hover:-translate-y-0.5"
               >
                 <AlertTriangle className="w-4 h-4" />
-                <span>Report an Issue</span>
+                <span>{t('hero_report_btn')}</span>
               </button>
 
               <button
@@ -86,7 +89,7 @@ export default function Home({ setActivePage, onSelectReport }) {
                 className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs border border-slate-300 shadow-xs transition-colors"
               >
                 <FileText className="w-4 h-4 text-teal-600" />
-                <span>All Reports ({stats.total_reports})</span>
+                <span>{t('hero_all_reports')} ({stats.total_reports})</span>
               </button>
             </div>
 
@@ -95,7 +98,15 @@ export default function Home({ setActivePage, onSelectReport }) {
         </div>
       </section>
 
-      {/* PRIMARY FOCUS: The Interactive Live Map (Matching Reference Image 1 & 3) */}
+      {/* TRACK MY REPORT CITIZEN WIDGET */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <TrackReportWidget onOpenReportModal={(rep) => {
+          setSelectedMapReport(rep);
+          if (onSelectReport) onSelectReport(rep);
+        }} />
+      </section>
+
+      {/* PRIMARY FOCUS: The Interactive Live Map */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="space-y-4">
           
@@ -103,11 +114,11 @@ export default function Home({ setActivePage, onSelectReport }) {
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-teal-600" />
               <h2 className="text-lg font-bold text-slate-900 font-['Outfit']">
-                Interactive Community Observation Map
+                {t('map_heading')}
               </h2>
             </div>
             <span className="text-xs text-slate-500 hidden sm:block">
-              Click any colored pin to inspect observation details & photo evidence
+              {t('map_subheading')}
             </span>
           </div>
 
@@ -123,22 +134,22 @@ export default function Home({ setActivePage, onSelectReport }) {
         </div>
       </section>
 
-      {/* Horizontal List of Reports (Matching Reference 2 & 3: Device / Hotspot Cards) */}
+      {/* Horizontal List of Reports */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-3">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold text-slate-900 font-['Outfit']">
-              Reported Locations & Observations ({reports.length})
+              {t('hotspots')} ({reports.length})
             </h3>
             <p className="text-xs text-slate-500">
-              Select any card below to pan the map and display the floating details panel.
+              {t('hotspots_desc')}
             </p>
           </div>
           <button
             onClick={() => { setActivePage('reports'); window.scrollTo(0, 0); }}
             className="text-xs font-bold text-teal-700 hover:text-teal-900 flex items-center gap-1"
           >
-            <span>Catalog View</span>
+            <span>{t('view_catalog')}</span>
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
@@ -173,7 +184,7 @@ export default function Home({ setActivePage, onSelectReport }) {
                           : 'bg-teal-100 text-teal-800'
                       }`}
                     >
-                      {r.status}
+                      {t(`status_${(r.status || '').toLowerCase().replace(/ /g, '_')}`) || r.status}
                     </span>
                   </div>
 
@@ -195,10 +206,10 @@ export default function Home({ setActivePage, onSelectReport }) {
 
                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
                   <span className="text-amber-700 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200/80">
-                    Unverified Report
+                    {t('unverified_badge')}
                   </span>
                   <span className="text-teal-700 font-bold group-hover:underline flex items-center gap-0.5">
-                    View on Map &rarr;
+                    {t('view_on_map')} &rarr;
                   </span>
                 </div>
               </div>
@@ -207,23 +218,23 @@ export default function Home({ setActivePage, onSelectReport }) {
         </div>
       </section>
 
-      {/* Nutakki Village Field Case Study Card (Matching Calypso/AIR modern environmental aesthetic) */}
+      {/* Nutakki Village Field Case Study Card */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="bg-gradient-to-r from-teal-900 via-slate-900 to-teal-950 text-white rounded-3xl p-6 sm:p-10 shadow-float border border-teal-800/80 space-y-4">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="space-y-2 max-w-3xl">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-500/20 border border-teal-500/40 text-mint-300 text-xs font-bold">
                 <Building2 className="w-3.5 h-3.5" />
-                <span>Case Study: Nutakki Village (Vijayawada / Guntur District)</span>
+                <span>{t('case_study_title')}</span>
               </div>
               <h3 className="text-xl sm:text-2xl font-extrabold font-['Outfit'] text-white">
-                Understanding the Rural Groundwater Reality
+                {t('case_study_heading')}
               </h3>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                During our Community Service Project (CSP) field survey, residents reported black-coloured groundwater in local borewells. Our team observed that <strong>the village lacks a proper covered drainage network</strong>, causing domestic wastewater to stagnate and continuously seep into the shallow water table.
+                {t('case_study_desc')}
               </p>
               <p className="text-xs text-mint-200/80 leading-relaxed">
-                <em>Scientific Reminder:</em> The reported cause of groundwater pollution has not been independently verified. Visual discoloration or bad odor cannot replace qualified laboratory chemical and bacteriological testing.
+                <em>{t('case_study_disclaimer')}</em>
               </p>
             </div>
 
@@ -232,13 +243,13 @@ export default function Home({ setActivePage, onSelectReport }) {
                 onClick={() => { setActivePage('about'); window.scrollTo(0, 0); }}
                 className="px-5 py-2.5 rounded-full bg-mint-400 hover:bg-mint-300 text-slate-950 font-bold text-xs shadow-md transition-colors text-center"
               >
-                Read Field Methodology
+                {t('read_methodology')}
               </button>
               <button
                 onClick={() => { setActivePage('safety'); window.scrollTo(0, 0); }}
                 className="px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white font-medium text-xs border border-white/20 transition-colors text-center"
               >
-                Testing Guidelines
+                {t('testing_guidelines')}
               </button>
             </div>
           </div>
@@ -254,7 +265,7 @@ export default function Home({ setActivePage, onSelectReport }) {
             </div>
             <div>
               <span className="text-2xl font-black text-slate-900 block font-['Outfit']">{stats.total_reports}</span>
-              <span className="text-xs text-slate-500 font-medium">Logged Reports</span>
+              <span className="text-xs text-slate-500 font-medium">{t('stat_total')}</span>
             </div>
           </div>
 
@@ -264,7 +275,7 @@ export default function Home({ setActivePage, onSelectReport }) {
             </div>
             <div>
               <span className="text-2xl font-black text-slate-900 block font-['Outfit']">{stats.under_review}</span>
-              <span className="text-xs text-slate-500 font-medium">Under Review</span>
+              <span className="text-xs text-slate-500 font-medium">{t('stat_under_review')}</span>
             </div>
           </div>
 
@@ -274,7 +285,7 @@ export default function Home({ setActivePage, onSelectReport }) {
             </div>
             <div>
               <span className="text-2xl font-black text-slate-900 block font-['Outfit']">{stats.resolved}</span>
-              <span className="text-xs text-slate-500 font-medium">Actioned / Resolved</span>
+              <span className="text-xs text-slate-500 font-medium">{t('stat_resolved')}</span>
             </div>
           </div>
 
@@ -284,7 +295,7 @@ export default function Home({ setActivePage, onSelectReport }) {
             </div>
             <div>
               <span className="text-2xl font-black text-slate-900 block font-['Outfit']">{stats.villages_impacted || 1}</span>
-              <span className="text-xs text-slate-500 font-medium">Villages Monitored</span>
+              <span className="text-xs text-slate-500 font-medium">{t('stat_villages')}</span>
             </div>
           </div>
         </div>

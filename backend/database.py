@@ -123,7 +123,7 @@ def get_db():
         conn.close()
 
 def init_db():
-    """Initializes the database schema with necessary tables and indexes."""
+    """Initializes the database schema with necessary tables, indexes, and laboratory verification columns."""
     with get_db() as conn:
         cursor = conn.cursor()
 
@@ -160,7 +160,31 @@ def init_db():
                     admin_notes TEXT,
                     created_at VARCHAR(100) NOT NULL,
                     updated_at VARCHAR(100) NOT NULL,
-                    is_demo INTEGER DEFAULT 0
+                    is_demo INTEGER DEFAULT 0,
+                    ph DOUBLE PRECISION,
+                    tds DOUBLE PRECISION,
+                    fluoride DOUBLE PRECISION,
+                    nitrate DOUBLE PRECISION,
+                    e_coli VARCHAR(50),
+                    lab_name VARCHAR(255),
+                    testing_date VARCHAR(50),
+                    lab_certificate_url VARCHAR(1000),
+                    lab_notes TEXT,
+                    lab_status VARCHAR(50) DEFAULT 'Not Tested'
+                );
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS admin_activity_logs (
+                    id SERIAL PRIMARY KEY,
+                    admin_id VARCHAR(100),
+                    username VARCHAR(100),
+                    action VARCHAR(100) NOT NULL,
+                    report_id VARCHAR(50),
+                    previous_status VARCHAR(50),
+                    new_status VARCHAR(50),
+                    details TEXT,
+                    timestamp VARCHAR(100) NOT NULL
                 );
             """)
         else:
@@ -196,12 +220,60 @@ def init_db():
                     admin_notes TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
-                    is_demo INTEGER DEFAULT 0
+                    is_demo INTEGER DEFAULT 0,
+                    ph REAL,
+                    tds REAL,
+                    fluoride REAL,
+                    nitrate REAL,
+                    e_coli TEXT,
+                    lab_name TEXT,
+                    testing_date TEXT,
+                    lab_certificate_url TEXT,
+                    lab_notes TEXT,
+                    lab_status TEXT DEFAULT 'Not Tested'
                 );
             """)
 
-        # Indexes for fast search and filtering
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS admin_activity_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    admin_id TEXT,
+                    username TEXT,
+                    action TEXT NOT NULL,
+                    report_id TEXT,
+                    previous_status TEXT,
+                    new_status TEXT,
+                    details TEXT,
+                    timestamp TEXT NOT NULL
+                );
+            """)
+
+            # Safe automated schema migration for existing SQLite database
+            try:
+                cursor.execute("PRAGMA table_info(reports);")
+                existing_cols = {row["name"] for row in cursor.fetchall()}
+                lab_columns = [
+                    ("ph", "REAL"),
+                    ("tds", "REAL"),
+                    ("fluoride", "REAL"),
+                    ("nitrate", "REAL"),
+                    ("e_coli", "TEXT"),
+                    ("lab_name", "TEXT"),
+                    ("testing_date", "TEXT"),
+                    ("lab_certificate_url", "TEXT"),
+                    ("lab_notes", "TEXT"),
+                    ("lab_status", "TEXT DEFAULT 'Not Tested'")
+                ]
+                for col_name, col_type in lab_columns:
+                    if col_name not in existing_cols:
+                        cursor.execute(f"ALTER TABLE reports ADD COLUMN {col_name} {col_type};")
+            except Exception as e:
+                print(f"[Database Migration Warning] {e}")
+
+        # Indexes for fast search, filtering, and activity audit
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_village ON reports(village);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_category ON reports(category);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_created ON reports(created_at DESC);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_activity_created ON admin_activity_logs(timestamp DESC);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_activity_report ON admin_activity_logs(report_id);")

@@ -70,6 +70,33 @@ def test_endpoints():
     assert update_res.status_code == 200, f"Admin update failed: {update_res.data}"
     print(f"[PASS] PUT /api/admin/reports/{new_id}/status passed")
 
+    # 7b. Admin record lab test results
+    lab_res = client.put(f"/api/admin/reports/{new_id}/lab-test",
+                         headers={"Authorization": f"Bearer {token}"},
+                         json={
+                             "ph": 7.2,
+                             "tds": 420.0,
+                             "fluoride": 0.8,
+                             "nitrate": 15.0,
+                             "e_coli": "Absent (Safe)",
+                             "lab_name": "RWS&S District Water Quality Lab, Guntur",
+                             "testing_date": "2026-10-20",
+                             "lab_status": "Tested & Certified",
+                             "is_verified": True
+                         })
+    assert lab_res.status_code == 200, f"Lab test recording failed: {lab_res.data}"
+    lab_data = json.loads(lab_res.data)
+    assert lab_data["report"]["ph"] == 7.2
+    assert lab_data["report"]["tds"] == 420.0
+    print(f"[PASS] PUT /api/admin/reports/{new_id}/lab-test passed")
+
+    # 7c. Admin get activity logs
+    logs_res = client.get("/api/admin/logs", headers={"Authorization": f"Bearer {token}"})
+    assert logs_res.status_code == 200, f"Get activity logs failed: {logs_res.data}"
+    logs_data = json.loads(logs_res.data)
+    assert len(logs_data["logs"]) >= 2
+    print(f"[PASS] GET /api/admin/logs passed ({len(logs_data['logs'])} activity logs recorded)")
+
     # 8. Admin export
     export_res = client.get("/api/admin/export", headers={"Authorization": f"Bearer {token}"})
     assert export_res.status_code == 200, f"Admin export failed: {export_res.data}"

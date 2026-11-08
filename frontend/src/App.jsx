@@ -1,17 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
+import { LanguageProvider } from './context/LanguageContext';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import IntroSplash from './components/IntroSplash';
 import Home from './pages/Home';
-import ReportIssue from './pages/ReportIssue';
-import CommunityReports from './pages/CommunityReports';
-import WaterSafety from './pages/WaterSafety';
-import About from './pages/About';
-import AdminLogin from './pages/AdminLogin';
-import AdminDashboard from './pages/AdminDashboard';
-import { ShieldAlert, X } from 'lucide-react';
+import { X } from 'lucide-react';
+
+// Code-splitting secondary and admin pages with React.lazy
+const ReportIssue = lazy(() => import('./pages/ReportIssue'));
+const CommunityReports = lazy(() => import('./pages/CommunityReports'));
+const WaterSafety = lazy(() => import('./pages/WaterSafety'));
+const About = lazy(() => import('./pages/About'));
+const AdminLogin = lazy(() => import('./pages/AdminLogin'));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 
 const BASE_PATH = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
 
@@ -117,45 +120,52 @@ function AppContent() {
       {/* Main Responsive Header */}
       <Navbar activePage={activePage} setActivePage={setActivePage} />
 
-      {/* Main View Router */}
+      {/* Main View Router with Suspense */}
       <main className="flex-1">
-        {activePage === 'home' && (
-          <Home
-            setActivePage={setActivePage}
-            onSelectReport={handleSelectReportFromHome}
-          />
-        )}
+        <Suspense fallback={
+          <div className="min-h-[50vh] flex flex-col items-center justify-center gap-3">
+            <div className="w-10 h-10 border-4 border-teal-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-xs font-semibold text-slate-500">Loading JalaWatch portal...</span>
+          </div>
+        }>
+          {activePage === 'home' && (
+            <Home
+              setActivePage={setActivePage}
+              onSelectReport={handleSelectReportFromHome}
+            />
+          )}
 
-        {activePage === 'report' && (
-          <ReportIssue
-            setActivePage={setActivePage}
-            onReportCreated={handleReportCreated}
-          />
-        )}
+          {activePage === 'report' && (
+            <ReportIssue
+              setActivePage={setActivePage}
+              onReportCreated={handleReportCreated}
+            />
+          )}
 
-        {activePage === 'reports' && (
-          <CommunityReports
-            setActivePage={setActivePage}
-            initialReport={initialReportToView}
-            onClearInitialReport={() => setInitialReportToView(null)}
-          />
-        )}
+          {activePage === 'reports' && (
+            <CommunityReports
+              setActivePage={setActivePage}
+              initialReport={initialReportToView}
+              onClearInitialReport={() => setInitialReportToView(null)}
+            />
+          )}
 
-        {activePage === 'safety' && (
-          <WaterSafety />
-        )}
+          {activePage === 'safety' && (
+            <WaterSafety />
+          )}
 
-        {activePage === 'about' && (
-          <About setActivePage={setActivePage} />
-        )}
+          {activePage === 'about' && (
+            <About setActivePage={setActivePage} />
+          )}
 
-        {activePage === 'admin-login' && (
-          <AdminLogin setActivePage={setActivePage} />
-        )}
+          {activePage === 'admin-login' && (
+            <AdminLogin setActivePage={setActivePage} />
+          )}
 
-        {activePage === 'admin-dashboard' && (
-          <AdminDashboard setActivePage={setActivePage} />
-        )}
+          {activePage === 'admin-dashboard' && (
+            <AdminDashboard setActivePage={setActivePage} />
+          )}
+        </Suspense>
       </main>
 
       {/* Global Footer */}
@@ -166,10 +176,12 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <ToastProvider>
-        <AppContent />
-      </ToastProvider>
-    </AuthProvider>
+    <LanguageProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <AppContent />
+        </ToastProvider>
+      </AuthProvider>
+    </LanguageProvider>
   );
 }

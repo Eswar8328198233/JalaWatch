@@ -33,6 +33,10 @@ export const Colors = {
   successBg: '#ecfdf5',
   successBorder: '#a7f3d0',
 
+  // Errors / Danger (Red / Rose)
+  error: '#ef4444',
+  errorBg: '#fef2f2',
+
   // Neutrals
   white: '#ffffff',
   slate50: '#f8fafc',
