@@ -283,6 +283,30 @@ Follow these steps to experience the end-to-end functionality:
 
 ---
 
+## 🗄️ Database Management, Neon PostgreSQL & Cloudinary
+
+JalaWatch includes an architectural database abstraction in `backend/database.py` and cloud storage integration in `backend/app.py`:
+
+### 1. Database Abstraction & Switching
+- **Local Development**: Default connection to `backend/jalawatch.db` (SQLite3).
+- **Production / Cloud**: Set `DATABASE_URL` (or `DATABASE_URL_UNPOOLED`) in `backend/.env` or Render environment. The backend automatically connects via `psycopg2-binary` with zero code changes.
+- **DNS Resilience**: Built-in fallback DNS queries Google (`8.8.8.8`) and Cloudflare (`1.1.1.1`) via UDP port 53 to circumvent ISP-level DNS blocks on cloud database hosts.
+
+### 2. Migration & Verification Scripts
+- **Dry-run verification**: `python backend/migrate_to_postgres.py --dry-run`
+- **Execute live idempotent migration**: `python backend/migrate_to_postgres.py`
+- **Side-by-side database verification**: `python backend/verify_migration.py`
+- **Full backend API test suite**: `python backend/test_api.py`
+
+### 3. Cloud Object Storage (Cloudinary)
+- Configured via `CLOUDINARY_URL` or `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`.
+- Validates authentic image magic bytes (JPEG, PNG, WEBP) and enforces a 5MB size limit.
+- Uploads images to `jalawatch_reports/` folder with auto format and quality optimization.
+- Gracefully falls back to local disk storage in `backend/uploads/` if credentials are not configured.
+- Test suites: `python backend/test_uploads.py` and `python backend/test_cloudinary_live.py`
+
+---
+
 ## 📜 Academic Attribution & Contact
 
 - **Institution**: College Community Service Project (CSP) 2026

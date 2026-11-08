@@ -9,8 +9,17 @@ from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(BASE_DIR)
+
+# Load environment variables in cascading order (root .env.local, root .env, backend .env)
+for env_path in [
+    os.path.join(ROOT_DIR, ".env.local"),
+    os.path.join(ROOT_DIR, ".env"),
+    os.path.join(BASE_DIR, ".env"),
+]:
+    if os.path.exists(env_path):
+        load_dotenv(env_path, override=False)
 
 from database import get_db, init_db, get_engine_name
 from auth import (
@@ -30,24 +39,32 @@ try:
 except ImportError:
     CLOUDINARY_AVAILABLE = False
 
-def is_cloudinary_configured():
-    return bool(
-        CLOUDINARY_AVAILABLE and (
-            os.environ.get("CLOUDINARY_URL") or (
-                os.environ.get("CLOUDINARY_CLOUD_NAME") and
-                os.environ.get("CLOUDINARY_API_KEY") and
-                os.environ.get("CLOUDINARY_API_SECRET")
-            )
+def init_cloudinary():
+    """Configures Cloudinary SDK via CLOUDINARY_URL or individual credentials."""
+    if not CLOUDINARY_AVAILABLE:
+        return False
+    c_url = os.environ.get("CLOUDINARY_URL")
+    if c_url:
+        cloudinary.config(cloudinary_url=c_url, secure=True)
+        return True
+    c_name = os.environ.get("CLOUDINARY_CLOUD_NAME")
+    c_key = os.environ.get("CLOUDINARY_API_KEY")
+    c_secret = os.environ.get("CLOUDINARY_API_SECRET")
+    if c_name and c_key and c_secret:
+        cloudinary.config(
+            cloud_name=c_name,
+            api_key=c_key,
+            api_secret=c_secret,
+            secure=True
         )
-    )
+        return True
+    return False
 
-if is_cloudinary_configured() and os.environ.get("CLOUDINARY_CLOUD_NAME"):
-    cloudinary.config(
-        cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
-        api_key=os.environ.get("CLOUDINARY_API_KEY"),
-        api_secret=os.environ.get("CLOUDINARY_API_SECRET"),
-        secure=True
-    )
+def is_cloudinary_configured():
+    return bool(CLOUDINARY_AVAILABLE and init_cloudinary())
+
+# Initialize on module load if credentials exist
+init_cloudinary()
 
 app = Flask(__name__)
 

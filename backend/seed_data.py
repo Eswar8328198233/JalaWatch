@@ -1,7 +1,7 @@
 import os
 import datetime
 from database import get_db, init_db
-from auth import hash_password
+from auth import hash_password, verify_password
 
 def seed():
     """Seeds the database with an admin user and realistic sample demonstration reports."""
@@ -15,7 +15,7 @@ def seed():
         cursor = conn.cursor()
 
         # Seed or update admin
-        cursor.execute("SELECT id FROM admins WHERE username = ?", (admin_username,))
+        cursor.execute("SELECT id, password_hash FROM admins WHERE username = ?", (admin_username,))
         existing_admin = cursor.fetchone()
         now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -27,7 +27,18 @@ def seed():
             """, (admin_username, admin_email, pwd_hash, now_str))
             print(f"[Seed] Created admin account: {admin_username}")
         else:
-            print(f"[Seed] Admin account '{admin_username}' already exists.")
+            if admin_password and admin_password != "JalaWatchAdmin@2026":
+                if not verify_password(admin_password, existing_admin["password_hash"]):
+                    new_pwd_hash = hash_password(admin_password)
+                    cursor.execute(
+                        "UPDATE admins SET password_hash = ? WHERE username = ?",
+                        (new_pwd_hash, admin_username)
+                    )
+                    print(f"[Seed] Securely updated admin password for '{admin_username}'.")
+                else:
+                    print(f"[Seed] Admin account '{admin_username}' already configured with matching credentials.")
+            else:
+                print(f"[Seed] Admin account '{admin_username}' already exists.")
 
         # Seed sample reports if table is empty of demo records
         cursor.execute("SELECT COUNT(*) as count FROM reports")

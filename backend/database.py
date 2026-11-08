@@ -1,6 +1,22 @@
 import os
 import sqlite3
+import socket
+import struct
+import urllib.parse
 from contextlib import contextmanager
+from dotenv import load_dotenv
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(BASE_DIR)
+
+# Load environment variables in cascading order (local .env.local, root .env, backend .env)
+for env_path in [
+    os.path.join(ROOT_DIR, ".env.local"),
+    os.path.join(ROOT_DIR, ".env"),
+    os.path.join(BASE_DIR, ".env"),
+]:
+    if os.path.exists(env_path):
+        load_dotenv(env_path, override=False)
 
 try:
     import psycopg2
@@ -9,17 +25,89 @@ try:
 except ImportError:
     PSYCOPG2_AVAILABLE = False
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 db_env = os.environ.get("DATABASE_PATH", "jalawatch.db")
 if not os.path.isabs(db_env):
     DB_PATH = os.path.join(BASE_DIR, db_env)
 else:
     DB_PATH = db_env
 
+_HOST_CACHE = {}
+
+def resolve_hostname_fallback(hostname, dns_servers=("8.8.8.8", "1.1.1.1")):
+    """
+    Lightweight fallback DNS resolver for environments or ISPs (e.g. Jio/Reliance)
+    where recursive DNS fails to resolve cloud database hostnames (*.neon.tech).
+    Queries Google (8.8.8.8) or Cloudflare (1.1.1.1) public DNS via standard UDP port 53.
+    Caches resolved IP in-memory to avoid redundant UDP packets.
+    """
+    if hostname in _HOST_CACHE:
+        return _HOST_CACHE[hostname]
+
+    try:
+        ip = socket.gethostbyname(hostname)
+        _HOST_CACHE[hostname] = ip
+        return ip
+    except Exception:
+        pass
+
+    for dns_server in dns_servers:
+        try:
+            packet = b"\xaa\xbb\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+            for part in hostname.split("."):
+                packet += struct.pack("B", len(part)) + part.encode()
+            packet += b"\x00\x00\x01\x00\x01"
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(2.5)
+            sock.sendto(packet, (dns_server, 53))
+            data, _ = sock.recvfrom(1024)
+            sock.close()
+            idx = 12
+            while data[idx] != 0:
+                idx += 1 + data[idx]
+            idx += 5
+            ancount = struct.unpack("!H", data[6:8])[0]
+            for _ in range(ancount):
+                if idx >= len(data):
+                    break
+                if data[idx] & 0xC0 == 0xC0:
+                    idx += 2
+                else:
+                    while data[idx] != 0:
+                        idx += 1 + data[idx]
+                    idx += 1
+                rtype, rclass, ttl, rdlen = struct.unpack("!HHIH", data[idx:idx + 10])
+                idx += 10
+                if rtype == 1 and rdlen == 4:
+                    ip = socket.inet_ntoa(data[idx:idx + 4])
+                    _HOST_CACHE[hostname] = ip
+                    return ip
+                idx += rdlen
+        except Exception:
+            continue
+    return None
+
+def connect_postgres(pg_url):
+    """
+    Connects to PostgreSQL with automatic SSL enforcement and DNS fallback.
+    If local recursive DNS fails on cloud endpoints, routes via resolved hostaddr.
+    """
+    try:
+        return psycopg2.connect(pg_url)
+    except psycopg2.OperationalError as e:
+        err_msg = str(e).lower()
+        if "could not translate host name" in err_msg or "getaddrinfo failed" in err_msg:
+            parsed = urllib.parse.urlparse(pg_url)
+            if parsed.hostname:
+                fallback_ip = resolve_hostname_fallback(parsed.hostname)
+                if fallback_ip:
+                    return psycopg2.connect(pg_url, hostaddr=fallback_ip)
+        raise
+
 def get_database_url():
     """Returns PostgreSQL connection URL if set in environment, or None for SQLite."""
     url = (
         os.environ.get("DATABASE_URL")
+        or os.environ.get("DATABASE_URL_UNPOOLED")
         or os.environ.get("SUPABASE_DB_URL")
         or os.environ.get("POSTGRESQL_URL")
     )
@@ -98,7 +186,7 @@ def get_db_connection():
             raise RuntimeError(
                 "DATABASE_URL is configured but psycopg2 is not installed. Install psycopg2-binary."
             )
-        conn = psycopg2.connect(pg_url)
+        conn = connect_postgres(pg_url)
         return PostgresConnectionWrapper(conn)
 
     db_dir = os.path.dirname(DB_PATH)

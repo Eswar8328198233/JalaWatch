@@ -44,9 +44,15 @@ services:
         sync: false
       - key: ADMIN_EMAIL
         value: admin@jalawatch.org
-      # Optional: set DATABASE_URL if using managed PostgreSQL (Supabase / Render Postgres / Neon)
+      # Optional: Managed PostgreSQL (Neon Serverless PostgreSQL recommended)
       # - key: DATABASE_URL
       #   sync: false
-      # Optional: set CLOUDINARY_URL for durable cloud image persistence
+      # Optional: Cloudinary durable cloud object storage
       # - key: CLOUDINARY_URL
+      #   sync: false
+      # - key: CLOUDINARY_CLOUD_NAME
+      #   value: ckufwfev
+      # - key: CLOUDINARY_API_KEY
+      #   value: "756738857651315"
+      # - key: CLOUDINARY_API_SECRET
       #   sync: false

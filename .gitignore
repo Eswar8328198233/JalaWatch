@@ -15,6 +15,9 @@ __pycache__/
 .env
 */.env
 *.env
+*.env.backup
+*.env.*
+*.render_secret_key
 backend/backups/
 
 # Expo & React Native Build Artifacts
@@ -52,3 +55,4 @@ yarn-error.*
 
 # Uploads & Temporary Cache (optional if preserving demo uploads)
 uploads/*.tmp
+.neon
