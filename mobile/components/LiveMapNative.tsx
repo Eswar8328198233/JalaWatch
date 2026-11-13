@@ -138,21 +138,33 @@ export default function LiveMapNative({
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <style>
     html, body {
       margin: 0;
       padding: 0;
       width: 100%;
       height: 100%;
-      background-color: #e2f1f1;
+      background-color: #f0fdfa;
       overflow: hidden;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
     #map {
       width: 100%;
       height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #e2e8f0;
     }
     /* Hide default leaflet zoom controls to keep clean mobile UI */
     .leaflet-control-zoom {
@@ -160,8 +172,9 @@ export default function LiveMapNative({
     }
     .leaflet-control-attribution {
       font-size: 8px !important;
-      background: rgba(255,255,255,0.7) !important;
+      background: rgba(255,255,255,0.85) !important;
       padding: 1px 4px !important;
+      border-radius: 4px;
     }
 
     /* Custom Marker Container */
@@ -253,96 +266,146 @@ export default function LiveMapNative({
   <div id="map"></div>
 
   <script>
-    var map;
-    var markersLayer;
-    var currentSelectedId = null;
-
-    // Initialize Leaflet Map
-    map = L.map('map', {
-      center: [${NUTAKKI_CENTER.lat}, ${NUTAKKI_CENTER.lng}],
-      zoom: ${NUTAKKI_CENTER.zoom},
-      zoomControl: false,
-      attributionControl: true
-    });
-
-    // Add OpenStreetMap Standard Tiles (100% free, no API key, no watermark)
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      subdomains: 'abc',
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(map);
-
-    markersLayer = L.layerGroup().addTo(map);
-
     function notifyNative(msg) {
       if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
         window.ReactNativeWebView.postMessage(JSON.stringify(msg));
       }
     }
 
-    window.centerNutakki = function() {
-      map.flyTo([${NUTAKKI_CENTER.lat}, ${NUTAKKI_CENTER.lng}], ${NUTAKKI_CENTER.zoom}, { duration: 0.8 });
-    };
+    function initLeaflet() {
+      if (typeof L === 'undefined') {
+        var s = document.createElement('script');
+        s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+        s.onload = setupMap;
+        s.onerror = function() {
+          console.error('Failed to load Leaflet JS from fallback CDN');
+        };
+        document.head.appendChild(s);
+      } else {
+        setupMap();
+      }
+    }
 
-    window.updateMarkers = function(reportsData, selectedId) {
-      currentSelectedId = selectedId;
-      markersLayer.clearLayers();
+    var map;
+    var markersLayer;
+    var currentSelectedId = null;
 
-      reportsData.forEach(function(r) {
-        var isSelected = r.id === currentSelectedId;
-        var isHighConcern = r.category === 'Unusual water colour' || r.status === 'Under Review';
-        var isResolved = r.status === 'Resolved';
+    function refreshMapSize() {
+      if (map) {
+        map.invalidateSize(true);
+      }
+    }
 
-        var color = '#0d9488';
-        var haloColor = 'rgba(13, 148, 136, 0.35)';
-        var iconSymbol = '💧';
+    function setupMap() {
+      if (map || typeof L === 'undefined') return;
 
-        if (isHighConcern) {
-          color = '#ea580c';
-          haloColor = 'rgba(234, 88, 12, 0.35)';
-          iconSymbol = '!';
-        } else if (isResolved) {
-          color = '#10b981';
-          haloColor = 'rgba(16, 185, 129, 0.35)';
-          iconSymbol = '✓';
-        }
-
-        var labelText = r.landmark || r.village;
-        if (labelText.length > 18) {
-          labelText = labelText.substring(0, 16) + '…';
-        }
-
-        var html = '<div class="custom-marker">' +
-          '<div class="marker-callout ' + (isSelected ? 'selected' : '') + '">' +
-            '<span class="callout-dot" style="background-color: ' + color + '"></span>' +
-            '<span class="callout-text">' + labelText + '</span>' +
-            '<span class="callout-info">ⓘ</span>' +
-          '</div>' +
-          '<div class="radar-halo" style="background-color: ' + haloColor + '"></div>' +
-          '<div class="marker-pin ' + (isSelected ? 'selected' : '') + '" style="background-color: ' + color + '">' +
-            iconSymbol +
-          '</div>' +
-        '</div>';
-
-        var icon = L.divIcon({
-          className: 'leaflet-custom-div-icon',
-          html: html,
-          iconSize: [120, 60],
-          iconAnchor: [60, 50]
-        });
-
-        var marker = L.marker([r.lat, r.lng], { icon: icon });
-        marker.on('click', function() {
-          notifyNative({ type: 'SELECT_REPORT', id: r.id });
-          map.flyTo([r.lat, r.lng], Math.max(map.getZoom(), 15), { duration: 0.6 });
-        });
-
-        markersLayer.addLayer(marker);
+      map = L.map('map', {
+        center: [${NUTAKKI_CENTER.lat}, ${NUTAKKI_CENTER.lng}],
+        zoom: ${NUTAKKI_CENTER.zoom},
+        zoomControl: false,
+        attributionControl: true
       });
-    };
 
-    // Notify React Native that Leaflet map is initialized
-    notifyNative({ type: 'MAP_READY' });
+      // Humanitarian OpenStreetMap & Standard OSM: 100% free, no API key, no watermark
+      var hotOsmLayer = L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        subdomains: 'abc',
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, Tiles style by <a href="https://www.hotosm.org/">Humanitarian OpenStreetMap Team</a>'
+      });
+
+      var standardOsmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        subdomains: 'abc',
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      });
+
+      hotOsmLayer.addTo(map);
+
+      hotOsmLayer.on('tileerror', function() {
+        if (!map.hasLayer(standardOsmLayer)) {
+          standardOsmLayer.addTo(map);
+        }
+      });
+
+      markersLayer = L.layerGroup().addTo(map);
+
+      window.centerNutakki = function() {
+        map.flyTo([${NUTAKKI_CENTER.lat}, ${NUTAKKI_CENTER.lng}], ${NUTAKKI_CENTER.zoom}, { duration: 0.8 });
+      };
+
+      window.updateMarkers = function(reportsData, selectedId) {
+        refreshMapSize();
+        currentSelectedId = selectedId;
+        markersLayer.clearLayers();
+
+        reportsData.forEach(function(r) {
+          var isSelected = r.id === currentSelectedId;
+          var isHighConcern = r.category === 'Unusual water colour' || r.status === 'Under Review';
+          var isResolved = r.status === 'Resolved';
+
+          var color = '#0d9488';
+          var haloColor = 'rgba(13, 148, 136, 0.35)';
+          var iconSymbol = '💧';
+
+          if (isHighConcern) {
+            color = '#ea580c';
+            haloColor = 'rgba(234, 88, 12, 0.35)';
+            iconSymbol = '!';
+          } else if (isResolved) {
+            color = '#10b981';
+            haloColor = 'rgba(16, 185, 129, 0.35)';
+            iconSymbol = '✓';
+          }
+
+          var labelText = r.landmark || r.village;
+          if (labelText.length > 18) {
+            labelText = labelText.substring(0, 16) + '…';
+          }
+
+          var html = '<div class="custom-marker">' +
+            '<div class="marker-callout ' + (isSelected ? 'selected' : '') + '">' +
+              '<span class="callout-dot" style="background-color: ' + color + '"></span>' +
+              '<span class="callout-text">' + labelText + '</span>' +
+              '<span class="callout-info">ⓘ</span>' +
+            '</div>' +
+            '<div class="radar-halo" style="background-color: ' + haloColor + '"></div>' +
+            '<div class="marker-pin ' + (isSelected ? 'selected' : '') + '" style="background-color: ' + color + '">' +
+              iconSymbol +
+            '</div>' +
+          '</div>';
+
+          var icon = L.divIcon({
+            className: 'leaflet-custom-div-icon',
+            html: html,
+            iconSize: [120, 60],
+            iconAnchor: [60, 50]
+          });
+
+          var marker = L.marker([r.lat, r.lng], { icon: icon });
+          marker.on('click', function() {
+            notifyNative({ type: 'SELECT_REPORT', id: r.id });
+            map.flyTo([r.lat, r.lng], Math.max(map.getZoom(), 15), { duration: 0.6 });
+          });
+
+          markersLayer.addLayer(marker);
+        });
+      };
+
+      // Staggered size invalidation to adapt to Android layout pass
+      refreshMapSize();
+      setTimeout(refreshMapSize, 150);
+      setTimeout(refreshMapSize, 400);
+      setTimeout(refreshMapSize, 800);
+      setTimeout(refreshMapSize, 1500);
+
+      notifyNative({ type: 'MAP_READY' });
+    }
+
+    window.addEventListener('load', initLeaflet);
+    window.addEventListener('resize', refreshMapSize);
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      initLeaflet();
+    }
   </script>
 </body>
 </html>
@@ -355,18 +418,18 @@ export default function LiveMapNative({
       <NativeWebView
         ref={webViewRef}
         originWhitelist={['*']}
-        source={{ html: leafletHtml }}
+        source={{ html: leafletHtml, baseUrl: 'https://jalawatch.onrender.com' }}
         style={styles.map}
         onMessage={handleWebViewMessage}
         javaScriptEnabled={true}
         domStorageEnabled={true}
-        startInLoadingState={true}
-        renderLoading={() => (
-          <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={styles.loadingText}>Loading OpenStreetMap...</Text>
-          </View>
-        )}
+        startInLoadingState={false}
+        androidHardwareAccelerationDisabled={false}
+        androidLayerType="hardware"
+        mixedContentMode="always"
+        allowsInlineMediaPlayback={true}
+        scalesPageToFit={false}
+        cacheEnabled={true}
       />
 
       {/* Floating Top Bar (Search + Quick Categories) */}
@@ -470,13 +533,16 @@ export default function LiveMapNative({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    width: '100%',
+    height: '100%',
     position: 'relative',
-    backgroundColor: '#e2f1f1',
+    backgroundColor: '#f0fdfa',
   },
   map: {
-    width: Dimensions.get('window').width,
+    flex: 1,
+    width: '100%',
     height: '100%',
-    backgroundColor: '#e2f1f1',
+    backgroundColor: '#f0fdfa',
   },
   loadingOverlay: {
     position: 'absolute',

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -22,10 +22,30 @@ import {
   ExternalLink,
   ChevronRight,
   Info,
+  Globe,
 } from 'lucide-react-native';
 import { Colors, Shadows } from '../../constants/theme';
+import {
+  translations,
+  LanguageCode,
+  getSavedLanguage,
+  saveLanguage,
+} from '../../constants/translations';
 
 export default function WaterSafetyScreen() {
+  const [lang, setLang] = useState<LanguageCode>('en');
+  const t = translations[lang];
+
+  useEffect(() => {
+    getSavedLanguage().then((l) => setLang(l));
+  }, []);
+
+  const handleToggleLang = async () => {
+    const nextLang: LanguageCode = lang === 'en' ? 'te' : 'en';
+    setLang(nextLang);
+    await saveLanguage(nextLang);
+  };
+
   const [activeTab, setActiveTab] = useState<'anomalies' | 'testing' | 'drainage' | 'authorities'>('anomalies');
 
   const sensoryAnomalies = [
@@ -113,10 +133,19 @@ export default function WaterSafetyScreen() {
             <ShieldCheck size={18} color="#ffffff" strokeWidth={2.5} />
           </View>
           <View>
-            <Text style={styles.headerTitle}>Water Safety & Awareness</Text>
-            <Text style={styles.headerSubtitle}>Nutakki Village Scientific Advisory</Text>
+            <Text style={styles.headerTitle}>{lang === 'te' ? 'నీటి భద్రత & అవగాహన' : 'Water Safety & Awareness'}</Text>
+            <Text style={styles.headerSubtitle}>{lang === 'te' ? 'నుతక్కి గ్రామ శాస్త్రీయ మార్గదర్శకాలు' : 'Nutakki Village Scientific Advisory'}</Text>
           </View>
         </View>
+
+        <TouchableOpacity
+          style={styles.langPill}
+          onPress={handleToggleLang}
+          activeOpacity={0.8}
+        >
+          <Globe size={13} color={Colors.primary} />
+          <Text style={styles.langPillText}>{t.lang_toggle}</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -467,6 +496,20 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: 11,
     color: Colors.slate500,
+  },
+  langPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primaryBg,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 14,
+  },
+  langPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.primary,
+    marginLeft: 4,
   },
   container: {
     flex: 1,

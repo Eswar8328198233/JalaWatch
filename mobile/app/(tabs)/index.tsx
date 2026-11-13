@@ -88,9 +88,9 @@ export default function HomeScreen() {
       setReports(reportsData);
       setStats(statsData);
 
+      // Do not auto-select first report on initial load so the full live map is visible
       if (reportsData.length > 0 && !initialSelectDoneRef.current) {
         initialSelectDoneRef.current = true;
-        setSelectedReport(reportsData[0]);
       }
     } catch (err: any) {
       console.warn('Load reports error:', err.message);
@@ -586,6 +586,8 @@ const styles = StyleSheet.create({
   },
   mapWrapper: {
     flex: 1,
+    width: '100%',
+    height: '100%',
   },
   centerContainer: {
     flex: 1,

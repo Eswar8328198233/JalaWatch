@@ -193,6 +193,18 @@ export default function ReportScreen() {
   useEffect(() => {
     getSavedLanguage().then((l) => setLang(l));
     refreshOfflineDrafts();
+
+    // Automatic GPS detection if permission is already granted
+    (async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status === 'granted') {
+          handleDetectGPS();
+        }
+      } catch {
+        // Ignore silent check
+      }
+    })();
   }, []);
 
   const refreshOfflineDrafts = async () => {

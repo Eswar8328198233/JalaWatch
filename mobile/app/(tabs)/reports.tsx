@@ -71,7 +71,11 @@ export default function ReportsScreen() {
     'Agricultural runoff',
   ];
 
-  const villages = ['All', 'Nutakki', 'Tadepalli Rural', 'Mangalagiri Rural'];
+  const defaultVillages = ['All', 'Nutakki', 'Tadepalli Rural', 'Mangalagiri Rural', 'Vijayawada Rural', 'Kunchanapalli'];
+  const availableVillages = React.useMemo(() => {
+    return Array.from(new Set([...defaultVillages, ...reports.map((r) => r.village).filter(Boolean)]));
+  }, [reports]);
+
   const priorities = ['All', 'Urgent', 'High', 'Medium', 'Low'];
   const statuses = ['All', 'Submitted', 'Under Review', 'Resolved'];
 
@@ -264,6 +268,19 @@ export default function ReportsScreen() {
             >
               <Text style={[styles.filterChipText, selectedStatus === st && styles.filterChipTextActive]}>
                 {st}
+              </Text>
+            </TouchableOpacity>
+          ))}
+
+          {/* Village Filter Chips */}
+          {availableVillages.filter((v) => v !== 'All').map((v) => (
+            <TouchableOpacity
+              key={`v-${v}`}
+              style={[styles.filterChip, selectedVillage === v && styles.filterChipActive]}
+              onPress={() => setSelectedVillage(selectedVillage === v ? 'All' : v)}
+            >
+              <Text style={[styles.filterChipText, selectedVillage === v && styles.filterChipTextActive]}>
+                📍 {v}
               </Text>
             </TouchableOpacity>
           ))}

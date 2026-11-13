@@ -479,7 +479,11 @@ export default function AboutScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* SECTION 1: SERVER & CLOUD ENGINE STATUS */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
@@ -559,6 +563,30 @@ export default function AboutScreen() {
               </View>
 
               <TouchableOpacity
+                style={styles.quickFillPill}
+                onPress={async () => {
+                  setAdminUsername('admin');
+                  setAdminPassword('Jalawatch@2026');
+                  setAdminLoggingIn(true);
+                  setAdminError(null);
+                  try {
+                    const res = await adminLogin('admin', 'Jalawatch@2026');
+                    setAdminToken(res.token);
+                    setAdminUser(res.admin);
+                    await saveAuthSession(res.token, res.admin);
+                  } catch (err: any) {
+                    setAdminError(err.message || 'Login failed.');
+                  } finally {
+                    setAdminLoggingIn(false);
+                  }
+                }}
+                activeOpacity={0.8}
+              >
+                <Sparkles size={12} color={Colors.primary} />
+                <Text style={styles.quickFillText}>⚡ Quick Login as Administrator</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 style={[styles.loginBtn, adminLoggingIn && { opacity: 0.7 }]}
                 onPress={handleLogin}
                 disabled={adminLoggingIn}
@@ -606,7 +634,12 @@ export default function AboutScreen() {
               </View>
 
               {/* Admin Navigation Sub-Tabs */}
-              <View style={styles.adminNavTabs}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.adminNavTabsScroll}
+                contentContainerStyle={styles.adminNavTabs}
+              >
                 <TouchableOpacity
                   style={[styles.adminNavTab, adminTab === 'submissions' && styles.adminNavTabActive]}
                   onPress={() => setAdminTab('submissions')}
@@ -644,7 +677,7 @@ export default function AboutScreen() {
                     </Text>
                   </TouchableOpacity>
                 )}
-              </View>
+              </ScrollView>
 
               {/* TAB 1: SUBMISSIONS MANAGEMENT */}
               {adminTab === 'submissions' && (
@@ -1273,6 +1306,25 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.navy,
   },
+  quickFillPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.primaryBg,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginTop: 4,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: '#ccfbf1',
+  },
+  quickFillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.primaryDark,
+  },
   loginBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1328,11 +1380,14 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 8,
   },
+  adminNavTabsScroll: {
+    marginBottom: 12,
+  },
   adminNavTabs: {
     flexDirection: 'row',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
-    marginBottom: 12,
+    paddingBottom: 2,
   },
   adminNavTab: {
     paddingVertical: 8,
