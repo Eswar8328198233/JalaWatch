@@ -1,0 +1,16 @@
+{
+  "short_name": "JalaWatch",
+  "name": "JalaWatch – Groundwater Pollution Reporting & Awareness Portal",
+  "description": "Community groundwater pollution reporting and water quality monitoring portal for Nutakki Village and Andhra Pradesh.",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    }
+  ],
+  "start_url": "./",
+  "background_color": "#042f2e",
+  "theme_color": "#0d9488",
+  "display": "standalone"
+}

@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+
+# Googlebot Crawl Directives
+User-agent: Googlebot
+Allow: /
+
+# XML Sitemap Location
+Sitemap: https://eswar8328198233.github.io/JalaWatch/sitemap.xml
