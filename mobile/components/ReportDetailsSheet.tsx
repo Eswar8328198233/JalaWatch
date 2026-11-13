@@ -246,6 +246,13 @@ export default function ReportDetailsSheet({
               <Text style={styles.demoText}>Demo</Text>
             </View>
           )}
+          {report.priority && (
+            <View style={[styles.priorityBadge, report.priority === 'Urgent' ? { backgroundColor: Colors.dangerBg } : { backgroundColor: Colors.warningBg }]}>
+              <Text style={[styles.priorityText, report.priority === 'Urgent' ? { color: Colors.danger } : { color: Colors.warning }]}>
+                ⚡ {report.priority}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Title / Landmark */}
@@ -463,6 +470,15 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
     color: '#7e22ce',
+  },
+  priorityBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  priorityText: {
+    fontSize: 10,
+    fontWeight: '800',
   },
   titleText: {
     fontSize: 15,

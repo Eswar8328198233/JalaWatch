@@ -1,30 +1,19 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { submitNewReport } from './api';
+import { submitNewReport, SubmitReportPayload } from './api';
 
 export type OfflineSyncStatus = 'draft' | 'pending' | 'syncing' | 'failed' | 'submitted';
 
 export interface OfflineReport {
   localId: string;
   createdAt: string;
-  data: {
-    village: string;
-    category: string;
-    water_source?: string;
-    date_observed: string;
-    landmark?: string;
-    description: string;
-    latitude?: number;
-    longitude?: number;
-    reporter_name?: string;
-    reporter_contact?: string;
-  };
+  data: SubmitReportPayload;
   photoUri?: string;
   syncStatus: OfflineSyncStatus;
   syncError?: string;
   serverReportId?: string;
 }
 
-const STORAGE_KEY = '@jalawatch_offline_reports';
+const STORAGE_KEY = '@jalawatch_offline_reports_v2';
 
 /**
  * Retrieve all locally saved reports and drafts
@@ -35,7 +24,7 @@ export async function getOfflineReports(): Promise<OfflineReport[]> {
     if (!raw) return [];
     return JSON.parse(raw);
   } catch (err) {
-    console.error('Failed to read offline reports from AsyncStorage:', err);
+    console.error('[Offline] Failed to read offline reports from AsyncStorage:', err);
     return [];
   }
 }
@@ -45,7 +34,7 @@ export async function getOfflineReports(): Promise<OfflineReport[]> {
  */
 export async function saveOfflineReport(
   payload: {
-    data: OfflineReport['data'];
+    data: SubmitReportPayload;
     photoUri?: string;
     syncStatus?: OfflineSyncStatus;
   }
@@ -91,6 +80,15 @@ export async function deleteOfflineReport(localId: string): Promise<void> {
 }
 
 /**
+ * Clear all submitted reports from the offline queue
+ */
+export async function clearSubmittedOfflineReports(): Promise<void> {
+  const current = await getOfflineReports();
+  const active = current.filter((r) => r.syncStatus !== 'submitted');
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(active));
+}
+
+/**
  * Attempt to sync a single offline report to the server
  */
 export async function syncSingleReport(
@@ -101,6 +99,11 @@ export async function syncSingleReport(
 
   if (!target) {
     return { success: false, error: 'Report draft not found.' };
+  }
+
+  // If already submitted, don't submit again
+  if (target.syncStatus === 'submitted' && target.serverReportId) {
+    return { success: true, reportId: target.serverReportId };
   }
 
   // Set syncing status
@@ -146,4 +149,3 @@ export async function syncAllPendingReports(): Promise<{ synced: number; failed:
 
   return { synced, failed };
 }
-

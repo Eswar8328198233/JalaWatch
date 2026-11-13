@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   Modal,
   Share,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -38,6 +39,13 @@ import {
   Check,
   ChevronRight,
   Download,
+  AlertTriangle,
+  FileText,
+  Layers,
+  Key,
+  Trash2,
+  Share2,
+  Sparkles,
 } from 'lucide-react-native';
 import { Colors, Shadows } from '../../constants/theme';
 import {
@@ -45,21 +53,52 @@ import {
   setApiBaseUrl,
   testEndpoint,
   adminLogin,
+  adminGetMe,
   adminGetReports,
   adminUpdateReportStatus,
+  adminUpdatePriority,
+  adminAssignReport,
+  adminGetNotes,
+  adminAddNote,
+  adminUpdateLabTest,
+  adminDeleteReport,
+  adminGetUsers,
+  adminCreateUser,
+  adminUpdateUserRole,
+  adminChangePassword,
+  adminGetHotspots,
+  adminGetDuplicateClusters,
+  adminGetLogs,
   adminExportCsv,
   AdminUser,
   AdminReport,
+  ReportFollowupNote,
+  AdminActivityLog,
+  getFullPhotoUrl,
 } from '../../services/api';
-import { getSavedLanguage, saveLanguage, LanguageCode } from '../../constants/translations';
+import {
+  saveAuthSession,
+  getAuthToken,
+  getAuthUser,
+  clearAuthSession,
+} from '../../services/authStorage';
+import {
+  translations,
+  LanguageCode,
+  getSavedLanguage,
+  saveLanguage,
+} from '../../constants/translations';
 
 export default function AboutScreen() {
   const [currentLang, setCurrentLang] = useState<LanguageCode>('en');
+  const t = translations[currentLang];
+
+  // Server Health State
   const [serverStatus, setServerStatus] = useState<'checking' | 'online' | 'offline'>('checking');
   const [serverPingTime, setServerPingTime] = useState<number | null>(null);
   const [activeUrl, setActiveUrl] = useState(getApiBaseUrl());
 
-  // Admin state
+  // Admin Auth State
   const [adminToken, setAdminToken] = useState<string | null>(null);
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
   const [adminUsername, setAdminUsername] = useState('');
@@ -67,15 +106,53 @@ export default function AboutScreen() {
   const [adminLoggingIn, setAdminLoggingIn] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
 
-  // Admin review portal modal state
-  const [showAdminModal, setShowAdminModal] = useState(false);
+  // Admin Portal Sub-View
+  const [adminTab, setAdminTab] = useState<'submissions' | 'hotspots' | 'logs' | 'users'>('submissions');
   const [adminReports, setAdminReports] = useState<AdminReport[]>([]);
   const [adminLoadingReports, setAdminLoadingReports] = useState(false);
   const [adminFilterStatus, setAdminFilterStatus] = useState('All');
-  const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
-  const [tempNotes, setTempNotes] = useState('');
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [adminFilterPriority, setAdminFilterPriority] = useState('All');
+  const [adminSearch, setAdminSearch] = useState('');
 
+  // Report Inspection Modal
+  const [inspectingReport, setInspectingReport] = useState<AdminReport | null>(null);
+  const [followupNotes, setFollowupNotes] = useState<ReportFollowupNote[]>([]);
+  const [newNoteText, setNewNoteText] = useState('');
+  const [addingNote, setAddingNote] = useState(false);
+
+  // Lab Testing Modal
+  const [showLabModal, setShowLabModal] = useState(false);
+  const [labPh, setLabPh] = useState('');
+  const [labTds, setLabTds] = useState('');
+  const [labFluoride, setLabFluoride] = useState('');
+  const [labNitrate, setLabNitrate] = useState('');
+  const [labEColi, setLabEColi] = useState('Absent (Safe)');
+  const [labName, setLabName] = useState('RWS&S District Water Quality Lab, Guntur');
+  const [labRefNo, setLabRefNo] = useState('');
+  const [labCollectionDate, setLabCollectionDate] = useState('');
+  const [labTestingDate, setLabTestingDate] = useState(new Date().toISOString().split('T')[0]);
+  const [savingLab, setSavingLab] = useState(false);
+
+  // User Management State (Super Admin)
+  const [usersList, setUsersList] = useState<AdminUser[]>([]);
+  const [newUsername, setNewUsername] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserRole, setNewUserRole] = useState<'admin' | 'field_officer'>('field_officer');
+  const [creatingUser, setCreatingUser] = useState(false);
+
+  // Duplicate clusters
+  const [duplicateClusters, setDuplicateClusters] = useState<any[]>([]);
+
+  // Logs
+  const [activityLogs, setActivityLogs] = useState<AdminActivityLog[]>([]);
+
+  // Password Change Modal
+  const [showPwdModal, setShowPwdModal] = useState(false);
+  const [currentPwd, setCurrentPwd] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [changingPwd, setChangingPwd] = useState(false);
+
+  // Check health
   const checkHealth = useCallback(async () => {
     setServerStatus('checking');
     const start = Date.now();
@@ -92,19 +169,86 @@ export default function AboutScreen() {
     }
   }, []);
 
+  // Restore secure session on mount
   useEffect(() => {
     checkHealth();
     getSavedLanguage().then((l) => setCurrentLang(l));
+
+    (async () => {
+      const token = await getAuthToken();
+      const user = await getAuthUser();
+      if (token && user) {
+        try {
+          const verifiedUser = await adminGetMe(token);
+          setAdminToken(token);
+          setAdminUser(verifiedUser);
+        } catch {
+          await clearAuthSession();
+        }
+      }
+    })();
   }, [checkHealth]);
 
-  const handleChangeLanguage = async (newLang: LanguageCode) => {
-    setCurrentLang(newLang);
-    await saveLanguage(newLang);
-    Alert.alert('Language Updated', newLang === 'te' ? 'యాప్ భాష తెలుగుగా మార్చబడింది.' : 'Application language set to English.');
+  // Load admin data when token changes
+  useEffect(() => {
+    if (adminToken) {
+      loadAdminReports();
+      loadDuplicateClusters();
+      loadActivityLogs();
+      if (adminUser?.role === 'super_admin') {
+        loadUsers();
+      }
+    }
+  }, [adminToken, adminFilterStatus, adminFilterPriority, adminSearch]);
+
+  const loadAdminReports = async () => {
+    if (!adminToken) return;
+    setAdminLoadingReports(true);
+    try {
+      const data = await adminGetReports(adminToken, {
+        status: adminFilterStatus,
+        priority: adminFilterPriority,
+        search: adminSearch,
+      });
+      setAdminReports(data);
+    } catch (err: any) {
+      console.warn('Failed to load admin reports:', err.message);
+    } finally {
+      setAdminLoadingReports(false);
+    }
   };
 
-  // Admin login handler
-  const handleAdminLogin = async () => {
+  const loadDuplicateClusters = async () => {
+    if (!adminToken) return;
+    try {
+      const clusters = await adminGetDuplicateClusters(adminToken);
+      setDuplicateClusters(clusters);
+    } catch (err) {
+      console.warn('Failed to load clusters:', err);
+    }
+  };
+
+  const loadActivityLogs = async () => {
+    if (!adminToken) return;
+    try {
+      const logs = await adminGetLogs(adminToken, { limit: 30 });
+      setActivityLogs(logs);
+    } catch (err) {
+      console.warn('Failed to load logs:', err);
+    }
+  };
+
+  const loadUsers = async () => {
+    if (!adminToken) return;
+    try {
+      const users = await adminGetUsers(adminToken);
+      setUsersList(users);
+    } catch (err) {
+      console.warn('Failed to load users:', err);
+    }
+  };
+
+  const handleLogin = async () => {
     if (!adminUsername.trim() || !adminPassword.trim()) {
       setAdminError('Please enter both username and password.');
       return;
@@ -112,583 +256,878 @@ export default function AboutScreen() {
     setAdminLoggingIn(true);
     setAdminError(null);
     try {
-      const { token, admin } = await adminLogin(adminUsername.trim(), adminPassword.trim());
-      setAdminToken(token);
-      setAdminUser(admin);
+      const res = await adminLogin(adminUsername.trim(), adminPassword.trim());
+      setAdminToken(res.token);
+      setAdminUser(res.admin);
+      await saveAuthSession(res.token, res.admin);
       setAdminPassword('');
-      Alert.alert('Authenticated', `Welcome back, ${admin.username} (${admin.role}).`);
-      loadAdminReports(token);
+      Alert.alert('Login Successful', `Welcome, ${res.admin.username} (${res.admin.role}).`);
     } catch (err: any) {
-      setAdminError(err.message || 'Login failed. Please verify admin credentials.');
+      setAdminError(err.message || 'Login failed. Please check credentials.');
     } finally {
       setAdminLoggingIn(false);
     }
   };
 
-  // Load reports for admin review
-  const loadAdminReports = async (token: string, status = adminFilterStatus) => {
-    setAdminLoadingReports(true);
-    try {
-      const data = await adminGetReports(token, { status });
-      setAdminReports(data);
-    } catch (err: any) {
-      Alert.alert('Admin Error', err.message || 'Could not load admin reports.');
-    } finally {
-      setAdminLoadingReports(false);
-    }
-  };
-
-  const handleAdminLogout = () => {
+  const handleLogout = async () => {
+    await clearAuthSession();
     setAdminToken(null);
     setAdminUser(null);
-    setAdminReports([]);
-    setShowAdminModal(false);
+    setInspectingReport(null);
   };
 
-  // Change report status
-  const handleChangeStatus = async (reportId: string, newStatus: string) => {
-    if (!adminToken) return;
-    setUpdatingId(reportId);
-    try {
-      const updated = await adminUpdateReportStatus(adminToken, reportId, { status: newStatus });
-      setAdminReports((prev) => prev.map((r) => (r.id === reportId ? { ...r, ...updated } : r)));
-    } catch (err: any) {
-      Alert.alert('Status Update Failed', err.message);
-    } finally {
-      setUpdatingId(null);
+  const handleInspect = async (report: AdminReport) => {
+    setInspectingReport(report);
+    if (adminToken) {
+      try {
+        const notes = await adminGetNotes(adminToken, report.id);
+        setFollowupNotes(notes);
+      } catch {
+        setFollowupNotes([]);
+      }
     }
   };
 
-  // Save admin notes
-  const handleSaveNotes = async (reportId: string) => {
-    if (!adminToken) return;
-    setUpdatingId(reportId);
+  const handleAddFollowupNote = async () => {
+    if (!newNoteText.trim() || !adminToken || !inspectingReport) return;
+    setAddingNote(true);
     try {
-      const updated = await adminUpdateReportStatus(adminToken, reportId, { admin_notes: tempNotes });
-      setAdminReports((prev) => prev.map((r) => (r.id === reportId ? { ...r, ...updated } : r)));
-      setEditingNotesId(null);
+      const note = await adminAddNote(adminToken, inspectingReport.id, newNoteText.trim());
+      setFollowupNotes([note, ...followupNotes]);
+      setNewNoteText('');
+      loadActivityLogs();
     } catch (err: any) {
-      Alert.alert('Save Notes Failed', err.message);
+      Alert.alert('Error', err.message || 'Failed to add note');
     } finally {
-      setUpdatingId(null);
+      setAddingNote(false);
     }
   };
 
-  // Toggle verified flag
-  const handleToggleVerified = async (reportId: string, currentVerified?: boolean) => {
-    if (!adminToken) return;
-    setUpdatingId(reportId);
+  const handleUpdateStatus = async (status: string) => {
+    if (!adminToken || !inspectingReport) return;
     try {
-      const updated = await adminUpdateReportStatus(adminToken, reportId, { is_verified: !currentVerified });
-      setAdminReports((prev) => prev.map((r) => (r.id === reportId ? { ...r, ...updated } : r)));
+      const updated = await adminUpdateReportStatus(adminToken, inspectingReport.id, { status });
+      setInspectingReport({ ...inspectingReport, ...updated });
+      loadAdminReports();
+      loadActivityLogs();
+      Alert.alert('Status Updated', `Report ${inspectingReport.id} marked as ${status}.`);
     } catch (err: any) {
-      Alert.alert('Verification Toggle Failed', err.message);
-    } finally {
-      setUpdatingId(null);
+      Alert.alert('Update Failed', err.message);
     }
   };
 
-  // Export CSV handler
+  const handleUpdatePriority = async (priority: string) => {
+    if (!adminToken || !inspectingReport) return;
+    try {
+      const updated = await adminUpdatePriority(adminToken, inspectingReport.id, priority);
+      setInspectingReport({ ...inspectingReport, ...updated });
+      loadAdminReports();
+      loadActivityLogs();
+      Alert.alert('Priority Updated', `Priority set to ${priority}.`);
+    } catch (err: any) {
+      Alert.alert('Update Failed', err.message);
+    }
+  };
+
+  const handleAssignOfficer = () => {
+    if (!adminToken || !inspectingReport) return;
+    Alert.prompt
+      ? Alert.prompt('Assign Officer', 'Enter name of field inspector:', async (officerName) => {
+          if (!officerName) return;
+          try {
+            const updated = await adminAssignReport(adminToken, inspectingReport.id, officerName);
+            setInspectingReport({ ...inspectingReport, ...updated });
+            loadAdminReports();
+            loadActivityLogs();
+          } catch (e: any) {
+            Alert.alert('Assignment Failed', e.message);
+          }
+        })
+      : null;
+  };
+
+  const handleSaveLabTest = async () => {
+    if (!adminToken || !inspectingReport) return;
+    setSavingLab(true);
+    try {
+      const updated = await adminUpdateLabTest(adminToken, inspectingReport.id, {
+        ph: labPh ? parseFloat(labPh) : null,
+        tds: labTds ? parseFloat(labTds) : null,
+        fluoride: labFluoride ? parseFloat(labFluoride) : null,
+        nitrate: labNitrate ? parseFloat(labNitrate) : null,
+        e_coli: labEColi,
+        lab_name: labName,
+        report_reference_no: labRefNo.trim() || undefined,
+        sample_collection_date: labCollectionDate.trim() || undefined,
+        testing_date: labTestingDate,
+        lab_status: 'Tested & Certified',
+        is_verified: true,
+      });
+
+      setInspectingReport({ ...inspectingReport, ...updated });
+      setShowLabModal(false);
+      loadAdminReports();
+      loadActivityLogs();
+      Alert.alert('Lab Results Certified', 'Certified laboratory testing results saved.');
+    } catch (err: any) {
+      Alert.alert('Save Failed', err.message);
+    } finally {
+      setSavingLab(false);
+    }
+  };
+
+  const handleDeleteReport = async (reportId: string) => {
+    if (!adminToken) return;
+    Alert.alert(
+      'Confirm Deletion',
+      `Permanently delete report ${reportId}? This action is irreversible.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Permanently',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await adminDeleteReport(adminToken, reportId);
+              setInspectingReport(null);
+              loadAdminReports();
+              loadActivityLogs();
+              Alert.alert('Deleted', `Report ${reportId} has been removed.`);
+            } catch (err: any) {
+              Alert.alert('Delete Failed', err.message);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleExportCsv = async () => {
     if (!adminToken) return;
     try {
-      const csv = await adminExportCsv(adminToken);
+      const csvData = await adminExportCsv(adminToken);
       await Share.share({
-        title: 'jalawatch_reports_export.csv',
-        message: csv,
+        title: 'JalaWatch_Reports_Export.csv',
+        message: csvData,
       });
     } catch (err: any) {
-      Alert.alert('CSV Export Failed', err.message || 'Could not export reports CSV.');
+      Alert.alert('Export Failed', err.message);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!adminToken || !currentPwd || !newPwd) return;
+    setChangingPwd(true);
+    try {
+      await adminChangePassword(adminToken, currentPwd, newPwd);
+      setShowPwdModal(false);
+      setCurrentPwd('');
+      setNewPwd('');
+      Alert.alert('Success', 'Admin password changed successfully.');
+    } catch (err: any) {
+      Alert.alert('Password Change Failed', err.message);
+    } finally {
+      setChangingPwd(false);
+    }
+  };
+
+  const handleCreateUser = async () => {
+    if (!adminToken || !newUsername.trim() || !newUserPassword.trim()) {
+      Alert.alert('Validation', 'Username and password required.');
+      return;
+    }
+    setCreatingUser(true);
+    try {
+      await adminCreateUser(adminToken, {
+        username: newUsername.trim(),
+        password: newUserPassword.trim(),
+        role: newUserRole,
+      });
+      setNewUsername('');
+      setNewUserPassword('');
+      loadUsers();
+      Alert.alert('User Created', `Account created with role ${newUserRole}.`);
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setCreatingUser(false);
     }
   };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      {/* Header */}
+      {/* Top Header */}
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <View style={styles.headerIconCircle}>
-            <Info size={18} color="#ffffff" strokeWidth={2.5} />
-          </View>
-          <View>
-            <Text style={styles.headerTitle}>About CSP & Governance</Text>
-            <Text style={styles.headerSubtitle}>Nutakki Village Groundwater Study</Text>
+        <View style={styles.headerTitleGroup}>
+          <Text style={styles.headerTitle}>{t.tab_about}</Text>
+          <View style={styles.cspBadge}>
+            <Text style={styles.cspBadgeText}>CSP 2026</Text>
           </View>
         </View>
+
+        <TouchableOpacity
+          style={styles.langPill}
+          onPress={async () => {
+            const nextLang = currentLang === 'en' ? 'te' : 'en';
+            setCurrentLang(nextLang);
+            await saveLanguage(nextLang);
+          }}
+          activeOpacity={0.8}
+        >
+          <Globe size={13} color={Colors.primary} />
+          <Text style={styles.langPillText}>{t.lang_toggle}</Text>
+        </TouchableOpacity>
       </View>
 
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Language Selection Card */}
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+        {/* SECTION 1: SERVER & CLOUD ENGINE STATUS */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Globe size={18} color={Colors.primary} strokeWidth={2.4} />
-            <Text style={styles.cardTitle}>Language / భాష</Text>
+            <Server size={18} color={Colors.primary} />
+            <Text style={styles.cardTitle}>Cloud Backend Health</Text>
           </View>
-          <Text style={styles.bodyText}>
-            Select your preferred display language for reporting, maps, and offline records:
-          </Text>
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-            <TouchableOpacity
-              onPress={() => handleChangeLanguage('en')}
-              style={[
-                styles.langBtn,
-                currentLang === 'en' && styles.langBtnActive
-              ]}
-            >
-              <Text style={[styles.langBtnText, currentLang === 'en' && styles.langBtnTextActive]}>
-                English
-              </Text>
-            </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={() => handleChangeLanguage('te')}
+          <View style={styles.serverStatusRow}>
+            <View
               style={[
-                styles.langBtn,
-                currentLang === 'te' && styles.langBtnActive
+                styles.statusDot,
+                serverStatus === 'online'
+                  ? { backgroundColor: Colors.success }
+                  : serverStatus === 'checking'
+                  ? { backgroundColor: Colors.warning }
+                  : { backgroundColor: Colors.danger },
               ]}
-            >
-              <Text style={[styles.langBtnText, currentLang === 'te' && styles.langBtnTextActive]}>
-                తెలుగు (Telugu)
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Project Overview Card */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <BookOpen size={18} color={Colors.primary} strokeWidth={2.4} />
-            <Text style={styles.cardTitle}>College Community Service Project (CSP)</Text>
-          </View>
-          <Text style={styles.bodyText}>
-            <Text style={{ fontWeight: '800', color: Colors.slate900 }}>JalaWatch </Text>
-            is an academic community-monitoring portal developed as part of a Community Service Project (CSP) field study in <Text style={{ fontWeight: '700' }}>Nutakki Village</Text> near Vijayawada, Guntur District, Andhra Pradesh.
-          </Text>
-          <View style={styles.highlightBox}>
-            <MapPin size={16} color={Colors.primaryDark} style={{ marginTop: 2 }} />
-            <Text style={styles.highlightText}>
-              <Text style={{ fontWeight: '700' }}>Nutakki Field Observation: </Text>
-              Villagers reported concerns regarding black-tinted groundwater in borewells. Our team observed unpaved street drains where domestic wastewater seeps directly into porous alluvial soil strata.
+            />
+            <Text style={styles.serverStatusText}>
+              {serverStatus === 'online'
+                ? `Operational (${serverPingTime} ms)`
+                : serverStatus === 'checking'
+                ? 'Pinging server...'
+                : 'Offline / Sleeping'}
             </Text>
+            <TouchableOpacity onPress={checkHealth} style={{ marginLeft: 'auto' }}>
+              <RefreshCw size={14} color={Colors.primary} />
+            </TouchableOpacity>
           </View>
-        </View>
 
-        {/* Academic Prototype & Ethics Disclaimer */}
-        <View style={styles.disclaimerCard}>
-          <View style={styles.disclaimerHeader}>
-            <ShieldAlert size={18} color={Colors.warning} strokeWidth={2.4} />
-            <Text style={styles.disclaimerTitle}>ETHICS & SCIENTIFIC DISCLAIMER</Text>
-          </View>
-          <Text style={styles.disclaimerBody}>
-            1. <Text style={{ fontWeight: '700' }}>Unverified Citizen Data:</Text> Submissions represent unverified observational reports submitted by community members. They do not constitute certified scientific or epidemiological conclusions.
-          </Text>
-          <Text style={styles.disclaimerBody}>
-            2. <Text style={{ fontWeight: '700' }}>Independent Testing Required:</Text> No suspected cause has been officially established without laboratory chemical and microbiological assay.
-          </Text>
-          <Text style={styles.disclaimerBody}>
-            3. <Text style={{ fontWeight: '700' }}>Not a Government Agency:</Text> JalaWatch is an academic research demonstration designed to assist civic awareness and provide structured reports for official redressal via Spandana (1902).
+          <Text style={styles.activeUrlText} numberOfLines={1}>
+            Endpoint: {activeUrl}
           </Text>
         </View>
 
-        {/* Gram Panchayat & Research Admin Portal */}
+        {/* SECTION 2: ADMINISTRATIVE & FIELD PORTAL */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Lock size={18} color={Colors.primary} strokeWidth={2.4} />
-            <Text style={styles.cardTitle}>Panchayat & Research Admin Portal</Text>
+            <Lock size={18} color={Colors.navy} />
+            <Text style={styles.cardTitle}>{t.admin_title}</Text>
           </View>
 
-          {adminToken && adminUser ? (
-            <View style={styles.adminActiveBox}>
-              <View style={styles.adminBadgeRow}>
-                <View style={styles.adminAvatar}>
-                  <UserCheck size={16} color={Colors.primaryDark} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.adminUserText}>
-                    Logged in as: <Text style={{ fontWeight: '800' }}>{adminUser.username}</Text>
-                  </Text>
-                  <Text style={styles.adminRoleText}>Role: {adminUser.role}</Text>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={styles.openAdminModalBtn}
-                onPress={() => {
-                  loadAdminReports(adminToken);
-                  setShowAdminModal(true);
-                }}
-                activeOpacity={0.8}
-              >
-                <Edit3 size={15} color="#ffffff" />
-                <Text style={styles.openAdminModalBtnText}>Review & Manage Submissions</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.adminLogoutBtn}
-                onPress={handleAdminLogout}
-                activeOpacity={0.8}
-              >
-                <LogOut size={14} color="#dc2626" />
-                <Text style={styles.adminLogoutText}>Sign Out</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.adminLoginBox}>
-              <Text style={styles.adminLoginSubtitle}>
-                Administrative access for Gram Panchayat officials and CSP research leads to review citizen observations and update resolution statuses.
-              </Text>
+          {!adminToken ? (
+            /* Login Form */
+            <View style={styles.loginForm}>
+              <Text style={styles.loginDesc}>{t.admin_login_desc}</Text>
 
               {adminError && (
-                <View style={styles.adminErrorBanner}>
-                  <Text style={styles.adminErrorText}>{adminError}</Text>
+                <View style={styles.errorBox}>
+                  <AlertTriangle size={14} color={Colors.danger} />
+                  <Text style={styles.errorBoxText}>{adminError}</Text>
                 </View>
               )}
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Admin Username</Text>
+                <Text style={styles.inputLabel}>{t.admin_username}</Text>
                 <TextInput
                   style={styles.textInput}
-                  placeholder="e.g. admin"
-                  placeholderTextColor={Colors.slate400}
                   value={adminUsername}
                   onChangeText={setAdminUsername}
+                  placeholder="admin"
+                  placeholderTextColor={Colors.slate400}
                   autoCapitalize="none"
-                  autoCorrect={false}
                 />
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Password</Text>
+                <Text style={styles.inputLabel}>{t.admin_password}</Text>
                 <TextInput
                   style={styles.textInput}
-                  placeholder="Enter administrative password"
-                  placeholderTextColor={Colors.slate400}
                   value={adminPassword}
                   onChangeText={setAdminPassword}
+                  placeholder="••••••••••••"
+                  placeholderTextColor={Colors.slate400}
                   secureTextEntry
-                  autoCapitalize="none"
                 />
               </View>
 
               <TouchableOpacity
-                style={[styles.adminLoginBtn, adminLoggingIn && { opacity: 0.7 }]}
-                onPress={handleAdminLogin}
+                style={[styles.loginBtn, adminLoggingIn && { opacity: 0.7 }]}
+                onPress={handleLogin}
                 disabled={adminLoggingIn}
                 activeOpacity={0.8}
               >
                 {adminLoggingIn ? (
                   <ActivityIndicator size="small" color="#ffffff" />
                 ) : (
-                  <Unlock size={14} color="#ffffff" />
+                  <Unlock size={16} color="#ffffff" />
                 )}
-                <Text style={styles.adminLoginBtnText}>
-                  {adminLoggingIn ? 'Authenticating...' : 'Sign In as Administrator'}
-                </Text>
+                <Text style={styles.loginBtnText}>{t.btn_login}</Text>
               </TouchableOpacity>
+            </View>
+          ) : (
+            /* Authenticated Admin Dashboard */
+            <View>
+              {/* Officer Profile Bar */}
+              <View style={styles.profileBar}>
+                <View style={styles.profileInfo}>
+                  <UserCheck size={18} color={Colors.primary} />
+                  <View>
+                    <Text style={styles.profileName}>{adminUser?.username}</Text>
+                    <Text style={styles.profileRole}>
+                      Role: {adminUser?.role === 'super_admin' ? t.admin_role_super : adminUser?.role === 'admin' ? t.admin_role_admin : t.admin_role_officer}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.profileActions}>
+                  <TouchableOpacity
+                    style={styles.actionIconBtn}
+                    onPress={() => setShowPwdModal(true)}
+                  >
+                    <Key size={14} color={Colors.navy} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.actionIconBtn} onPress={handleExportCsv}>
+                    <Download size={14} color={Colors.primary} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+                    <LogOut size={14} color={Colors.danger} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Admin Navigation Sub-Tabs */}
+              <View style={styles.adminNavTabs}>
+                <TouchableOpacity
+                  style={[styles.adminNavTab, adminTab === 'submissions' && styles.adminNavTabActive]}
+                  onPress={() => setAdminTab('submissions')}
+                >
+                  <Text style={[styles.adminNavTabText, adminTab === 'submissions' && styles.adminNavTabTextActive]}>
+                    {t.tab_admin_submissions}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.adminNavTab, adminTab === 'hotspots' && styles.adminNavTabActive]}
+                  onPress={() => setAdminTab('hotspots')}
+                >
+                  <Text style={[styles.adminNavTabText, adminTab === 'hotspots' && styles.adminNavTabTextActive]}>
+                    Clusters ({duplicateClusters.length})
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.adminNavTab, adminTab === 'logs' && styles.adminNavTabActive]}
+                  onPress={() => setAdminTab('logs')}
+                >
+                  <Text style={[styles.adminNavTabText, adminTab === 'logs' && styles.adminNavTabTextActive]}>
+                    {t.tab_admin_logs}
+                  </Text>
+                </TouchableOpacity>
+
+                {adminUser?.role === 'super_admin' && (
+                  <TouchableOpacity
+                    style={[styles.adminNavTab, adminTab === 'users' && styles.adminNavTabActive]}
+                    onPress={() => setAdminTab('users')}
+                  >
+                    <Text style={[styles.adminNavTabText, adminTab === 'users' && styles.adminNavTabTextActive]}>
+                      {t.tab_admin_users}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* TAB 1: SUBMISSIONS MANAGEMENT */}
+              {adminTab === 'submissions' && (
+                <View style={styles.tabContent}>
+                  {/* Search and Filters */}
+                  <View style={styles.adminFilterRow}>
+                    <TextInput
+                      style={styles.adminSearchInput}
+                      value={adminSearch}
+                      onChangeText={setAdminSearch}
+                      placeholder="Search ID, village, reporter..."
+                      placeholderTextColor={Colors.slate400}
+                    />
+                  </View>
+
+                  {adminLoadingReports ? (
+                    <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 20 }} />
+                  ) : (
+                    adminReports.map((item) => (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={styles.adminReportCard}
+                        onPress={() => handleInspect(item)}
+                        activeOpacity={0.8}
+                      >
+                        <View style={styles.adminCardHeader}>
+                          <Text style={styles.adminReportId}>{item.id}</Text>
+                          <View
+                            style={[
+                              styles.adminStatusPill,
+                              item.status === 'Resolved'
+                                ? { backgroundColor: Colors.successBg }
+                                : item.status === 'Under Review'
+                                ? { backgroundColor: Colors.warningBg }
+                                : { backgroundColor: Colors.primaryBg },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.adminStatusText,
+                                item.status === 'Resolved'
+                                  ? { color: Colors.success }
+                                  : item.status === 'Under Review'
+                                  ? { color: Colors.warning }
+                                  : { color: Colors.primary },
+                              ]}
+                            >
+                              {item.status}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <Text style={styles.adminCategoryText}>{item.category}</Text>
+                        <Text style={styles.adminVillageText}>📍 {item.village} • {item.date_observed}</Text>
+
+                        {item.assigned_to && (
+                          <Text style={styles.adminAssignedText}>👤 Assigned: {item.assigned_to}</Text>
+                        )}
+                      </TouchableOpacity>
+                    ))
+                  )}
+                </View>
+              )}
+
+              {/* TAB 2: CLUSTERS & HOTSPOTS */}
+              {adminTab === 'hotspots' && (
+                <View style={styles.tabContent}>
+                  <Text style={styles.tabHeaderDesc}>
+                    Duplicate incidents reported within 150 meters of each other:
+                  </Text>
+                  {duplicateClusters.length === 0 ? (
+                    <Text style={styles.emptyNoticeText}>No duplicate clusters detected within 150m.</Text>
+                  ) : (
+                    duplicateClusters.map((cluster, idx) => (
+                      <View key={idx} style={styles.clusterCard}>
+                        <View style={styles.clusterHeader}>
+                          <AlertTriangle size={15} color={Colors.warning} />
+                          <Text style={styles.clusterTitle}>
+                            Cluster #{idx + 1} ({cluster.count} reports)
+                          </Text>
+                        </View>
+                        <Text style={styles.clusterDistance}>
+                          Separation: ~{cluster.distance_meters} meters
+                        </Text>
+                        <Text style={styles.clusterIds}>
+                          IDs: {cluster.reports.map((r: any) => r.id).join(', ')}
+                        </Text>
+                      </View>
+                    ))
+                  )}
+                </View>
+              )}
+
+              {/* TAB 3: AUDIT TRAIL */}
+              {adminTab === 'logs' && (
+                <View style={styles.tabContent}>
+                  {activityLogs.map((log) => (
+                    <View key={log.id} style={styles.logCard}>
+                      <View style={styles.logHeader}>
+                        <Text style={styles.logAction}>{log.action}</Text>
+                        <Text style={styles.logTime}>{log.timestamp.slice(0, 16)}</Text>
+                      </View>
+                      <Text style={styles.logDetails}>
+                        By: <Text style={styles.bold}>{log.username}</Text> {log.report_id ? `• ${log.report_id}` : ''}
+                      </Text>
+                      {log.details && <Text style={styles.logSubDetails}>{log.details}</Text>}
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* TAB 4: USERS MANAGEMENT (SUPER ADMIN) */}
+              {adminTab === 'users' && adminUser?.role === 'super_admin' && (
+                <View style={styles.tabContent}>
+                  {/* Create New User */}
+                  <View style={styles.createUserBox}>
+                    <Text style={styles.createBoxTitle}>Add Staff Account</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={newUsername}
+                      onChangeText={setNewUsername}
+                      placeholder="Username"
+                      placeholderTextColor={Colors.slate400}
+                      autoCapitalize="none"
+                    />
+                    <TextInput
+                      style={[styles.textInput, { marginVertical: 8 }]}
+                      value={newUserPassword}
+                      onChangeText={setNewUserPassword}
+                      placeholder="Password"
+                      placeholderTextColor={Colors.slate400}
+                      secureTextEntry
+                    />
+                    <View style={styles.rolePickerRow}>
+                      <TouchableOpacity
+                        style={[styles.roleChip, newUserRole === 'field_officer' && styles.roleChipActive]}
+                        onPress={() => setNewUserRole('field_officer')}
+                      >
+                        <Text style={[styles.roleChipText, newUserRole === 'field_officer' && styles.roleChipTextActive]}>
+                          Field Officer
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.roleChip, newUserRole === 'admin' && styles.roleChipActive]}
+                        onPress={() => setNewUserRole('admin')}
+                      >
+                        <Text style={[styles.roleChipText, newUserRole === 'admin' && styles.roleChipTextActive]}>
+                          Administrator
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.addUserBtn}
+                      onPress={handleCreateUser}
+                      disabled={creatingUser}
+                    >
+                      <Text style={styles.addUserBtnText}>Create Account</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Users List */}
+                  {usersList.map((u) => (
+                    <View key={u.id} style={styles.userCard}>
+                      <View>
+                        <Text style={styles.userName}>{u.username}</Text>
+                        <Text style={styles.userRole}>Role: {u.role}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
           )}
         </View>
 
-        {/* Server & Backend Connection Status */}
+        {/* SECTION 3: PROJECT INFORMATION */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Server size={18} color={Colors.primary} strokeWidth={2.4} />
-            <Text style={styles.cardTitle}>Backend API Status</Text>
+            <Info size={18} color={Colors.primary} />
+            <Text style={styles.cardTitle}>Community Service Project (CSP)</Text>
           </View>
-
-          <View style={styles.statusRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.statusLabel}>Connected API Endpoint</Text>
-              <Text style={styles.statusUrl} numberOfLines={1}>{activeUrl}</Text>
-            </View>
-
-            <View style={[
-              styles.statusBadge,
-              serverStatus === 'online' && styles.statusBadgeOnline,
-              serverStatus === 'offline' && styles.statusBadgeOffline,
-            ]}>
-              <View style={[
-                styles.statusDot,
-                serverStatus === 'online' && { backgroundColor: '#16a34a' },
-                serverStatus === 'offline' && { backgroundColor: '#dc2626' },
-              ]} />
-              <Text style={[
-                styles.statusBadgeText,
-                serverStatus === 'online' && { color: '#166534' },
-                serverStatus === 'offline' && { color: '#991b1b' },
-              ]}>
-                {serverStatus === 'checking' ? 'Testing...' : serverStatus === 'online' ? `Online (${serverPingTime}ms)` : 'Offline'}
-              </Text>
-            </View>
-          </View>
-
-          <TouchableOpacity
-            style={styles.refreshServerBtn}
-            onPress={checkHealth}
-            activeOpacity={0.8}
-          >
-            <RefreshCw size={14} color={Colors.primary} strokeWidth={2.2} />
-            <Text style={styles.refreshServerBtnText}>Test Server Connection</Text>
-          </TouchableOpacity>
-
-          <View style={styles.infoTipBox}>
-            <Text style={styles.infoTipText}>
-              <Text style={{ fontWeight: '700' }}>Note for Android Device / USB Cable: </Text>
-              Supports Wi-Fi LAN IP (192.168.x.x), Android emulator (10.0.2.2), and physical device USB reverse (127.0.0.1:5000 via adb reverse).
-            </Text>
-          </View>
-        </View>
-
-        {/* Technical Architecture Info */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Smartphone size={18} color={Colors.primary} strokeWidth={2.4} />
-            <Text style={styles.cardTitle}>Mobile App Architecture</Text>
-          </View>
-
-          <View style={styles.techList}>
-            <View style={styles.techItem}>
-              <Text style={styles.techLabel}>Framework</Text>
-              <Text style={styles.techVal}>React Native (Expo SDK 58, Expo Router)</Text>
-            </View>
-            <View style={styles.techItem}>
-              <Text style={styles.techLabel}>Mapping Engine</Text>
-              <Text style={styles.techVal}>Leaflet OpenStreetMap Native WebView</Text>
-            </View>
-            <View style={styles.techItem}>
-              <Text style={styles.techLabel}>Backend REST API</Text>
-              <Text style={styles.techVal}>Python Flask + SQLite (Persistent Storage)</Text>
-            </View>
-            <View style={styles.techItem}>
-              <Text style={styles.techLabel}>Language</Text>
-              <Text style={styles.techVal}>TypeScript</Text>
-            </View>
-            <View style={styles.techItem}>
-              <Text style={styles.techLabel}>Design Tokens</Text>
-              <Text style={styles.techVal}>Mint, Aqua, Teal & Clean White</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Student Team & Mentorship */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Users size={18} color={Colors.primary} strokeWidth={2.4} />
-            <Text style={styles.cardTitle}>CSP Student Project Team</Text>
-          </View>
-          <Text style={styles.bodyText}>
-            Community Service Project conducted by undergraduate students under faculty guidance for Nutakki Gram Panchayat public awareness.
+          <Text style={styles.aboutText}>
+            JalaWatch is a dedicated rural groundwater pollution monitoring and community reporting system developed for Nutakki Village and surrounding rural areas in Guntur District, Andhra Pradesh.
           </Text>
-          <View style={styles.teamBadge}>
-            <Text style={styles.teamBadgeText}>Project Year: 2026 • Community Service Project (CSP)</Text>
-          </View>
-        </View>
-
-        {/* Version info footer */}
-        <View style={styles.footer}>
-          <Text style={styles.footerVersion}>JalaWatch Mobile App v1.0.0</Text>
-          <Text style={styles.footerCopyright}>College Community Service Project • Nutakki, AP</Text>
+          <Text style={styles.aboutText}>
+            The platform bridges community observations of discolored borewells, chemical odors, and drain seepage with certified laboratory verification, following BIS IS 10500 standards.
+          </Text>
         </View>
       </ScrollView>
 
-      {/* ADMIN REVIEW & STATUS MANAGEMENT MODAL */}
+      {/* INSPECTION MODAL */}
       <Modal
-        visible={showAdminModal}
+        visible={Boolean(inspectingReport)}
         animationType="slide"
-        onRequestClose={() => setShowAdminModal(false)}
+        transparent={true}
+        onRequestClose={() => setInspectingReport(null)}
       >
-        <SafeAreaView style={styles.modalSafeArea}>
-          <View style={styles.modalHeader}>
-            <View>
-              <Text style={styles.modalTitle}>Admin Report Management</Text>
-              <Text style={styles.modalSubtitle}>Review, update status, and manage field notes</Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => setShowAdminModal(false)}
-              style={styles.modalCloseBtn}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <X size={20} color={Colors.slate600} />
-            </TouchableOpacity>
-          </View>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            {inspectingReport && (
+              <>
+                <View style={styles.modalHeader}>
+                  <View>
+                    <Text style={styles.modalIdText}>{inspectingReport.id}</Text>
+                    <Text style={styles.modalCategoryText}>{inspectingReport.category}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setInspectingReport(null)}>
+                    <X size={20} color={Colors.slate500} />
+                  </TouchableOpacity>
+                </View>
 
-          {/* Status Filter Chips */}
-          <View style={styles.filterRow}>
-            {['All', 'Submitted', 'Under Review', 'Resolved'].map((st) => (
-              <TouchableOpacity
-                key={st}
-                onPress={() => {
-                  setAdminFilterStatus(st);
-                  if (adminToken) loadAdminReports(adminToken, st);
-                }}
-                style={[styles.filterChip, adminFilterStatus === st && styles.filterChipActive]}
-              >
-                <Text style={[styles.filterChipText, adminFilterStatus === st && styles.filterChipTextActive]}>
-                  {st}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+                <ScrollView style={styles.modalBody}>
+                  {/* Photo Evidence */}
+                  {inspectingReport.photo_url && (
+                    <Image
+                      source={{ uri: getFullPhotoUrl(inspectingReport.photo_url)! }}
+                      style={styles.inspectPhoto}
+                      resizeMode="cover"
+                    />
+                  )}
 
-          {/* Action Sub-header: Count and CSV Export */}
-          <View style={styles.modalActionRow}>
-            <Text style={styles.modalReportCount}>
-              {adminReports.length} {adminFilterStatus === 'All' ? 'total' : adminFilterStatus} reports
-            </Text>
-            <TouchableOpacity
-              style={styles.exportCsvBtn}
-              onPress={handleExportCsv}
-              activeOpacity={0.8}
-            >
-              <Download size={13} color={Colors.primaryDark} />
-              <Text style={styles.exportCsvBtnText}>Export CSV</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Report List */}
-          {adminLoadingReports ? (
-            <View style={styles.modalCenter}>
-              <ActivityIndicator size="large" color={Colors.primary} />
-              <Text style={styles.loadingText}>Loading reports for admin review...</Text>
-            </View>
-          ) : adminReports.length === 0 ? (
-            <View style={styles.modalCenter}>
-              <Text style={styles.emptyText}>No reports found for the selected filter.</Text>
-            </View>
-          ) : (
-            <ScrollView contentContainerStyle={styles.adminReportsList}>
-              {adminReports.map((report) => {
-                const isEditingThisNote = editingNotesId === report.id;
-                const isBusy = updatingId === report.id;
-
-                return (
-                  <View key={report.id} style={styles.adminReportCard}>
-                    {/* Top Row: ID, Village & Date */}
-                    <View style={styles.adminCardTop}>
-                      <View style={styles.adminIdBadge}>
-                        <Text style={styles.adminIdText}>{report.id}</Text>
-                      </View>
-                      <Text style={styles.adminVillageText}>{report.village}</Text>
-                      <Text style={styles.adminDateText}>{report.date_observed}</Text>
-                    </View>
-
-                    {/* Title / Description */}
-                    <Text style={styles.adminReportTitle}>{report.landmark || report.category}</Text>
-                    <Text style={styles.adminReportDesc} numberOfLines={3}>{report.description}</Text>
-
-                    {/* Reporter contact (confidential to admin) */}
-                    {report.reporter_contact ? (
-                      <View style={styles.reporterContactBox}>
-                        <Text style={styles.reporterContactLabel}>Citizen Contact:</Text>
-                        <Text style={styles.reporterContactValue}>{report.reporter_contact}</Text>
-                      </View>
-                    ) : null}
-
-                    {/* Verification Toggle */}
-                    <TouchableOpacity
-                      style={styles.verificationToggleRow}
-                      onPress={() => handleToggleVerified(report.id, report.is_verified)}
-                      disabled={isBusy}
-                      activeOpacity={0.8}
-                    >
-                      <View style={[styles.checkboxBox, report.is_verified && styles.checkboxBoxActive]}>
-                        {report.is_verified && <Check size={12} color="#ffffff" />}
-                      </View>
-                      <Text style={styles.verificationToggleText}>
-                        {report.is_verified ? 'Verified by Field Inspection' : 'Unverified Citizen Observation'}
-                      </Text>
-                    </TouchableOpacity>
-
-                    {/* Status Update Buttons */}
-                    <View style={styles.statusButtonGroup}>
-                      <Text style={styles.statusGroupLabel}>Change Status:</Text>
-                      <View style={styles.statusBtnRow}>
-                        {(['Submitted', 'Under Review', 'Resolved'] as const).map((s) => {
-                          const isActive = report.status === s;
-                          return (
-                            <TouchableOpacity
-                              key={s}
-                              style={[
-                                styles.statusBtn,
-                                isActive && styles.statusBtnActive,
-                                isBusy && { opacity: 0.5 },
-                              ]}
-                              onPress={() => handleChangeStatus(report.id, s)}
-                              disabled={isBusy || isActive}
-                            >
-                              <Text
-                                style={[
-                                  styles.statusBtnText,
-                                  isActive && styles.statusBtnTextActive,
-                                ]}
-                              >
-                                {s}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                    </View>
-
-                    {/* Admin Field Notes */}
-                    <View style={styles.notesSection}>
-                      <View style={styles.notesHeader}>
-                        <Text style={styles.notesLabel}>Internal Administrative Notes:</Text>
-                        {!isEditingThisNote && (
-                          <TouchableOpacity
-                            onPress={() => {
-                              setEditingNotesId(report.id);
-                              setTempNotes(report.admin_notes || '');
-                            }}
+                  {/* Status & Priority Controls */}
+                  <View style={styles.inspectControlsBox}>
+                    <Text style={styles.controlLabel}>Status:</Text>
+                    <View style={styles.pillRow}>
+                      {['Submitted', 'Under Review', 'Resolved', 'Archived'].map((st) => (
+                        <TouchableOpacity
+                          key={st}
+                          style={[
+                            styles.controlPill,
+                            inspectingReport.status === st && styles.controlPillActive,
+                          ]}
+                          onPress={() => handleUpdateStatus(st)}
+                        >
+                          <Text
+                            style={[
+                              styles.controlPillText,
+                              inspectingReport.status === st && styles.controlPillTextActive,
+                            ]}
                           >
-                            <Text style={styles.editNotesBtnText}>Edit</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
+                            {st}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
 
-                      {isEditingThisNote ? (
-                        <View style={styles.notesEditBox}>
-                          <TextInput
-                            style={styles.notesInput}
-                            value={tempNotes}
-                            onChangeText={setTempNotes}
-                            placeholder="Add field inspection findings or escalation notes..."
-                            placeholderTextColor={Colors.slate400}
-                            multiline
-                          />
-                          <View style={styles.notesBtnRow}>
-                            <TouchableOpacity
-                              style={styles.saveNotesBtn}
-                              onPress={() => handleSaveNotes(report.id)}
-                              disabled={isBusy}
-                            >
-                              <Save size={12} color="#ffffff" />
-                              <Text style={styles.saveNotesBtnText}>Save</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              style={styles.cancelNotesBtn}
-                              onPress={() => setEditingNotesId(null)}
-                            >
-                              <Text style={styles.cancelNotesBtnText}>Cancel</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      ) : (
-                        <Text style={styles.notesContent}>
-                          {report.admin_notes || 'No administrative notes added yet.'}
-                        </Text>
-                      )}
+                    <Text style={[styles.controlLabel, { marginTop: 10 }]}>Priority:</Text>
+                    <View style={styles.pillRow}>
+                      {['Low', 'Medium', 'High', 'Urgent'].map((pr) => (
+                        <TouchableOpacity
+                          key={pr}
+                          style={[
+                            styles.controlPill,
+                            inspectingReport.priority === pr && styles.controlPillActive,
+                          ]}
+                          onPress={() => handleUpdatePriority(pr)}
+                        >
+                          <Text
+                            style={[
+                              styles.controlPillText,
+                              inspectingReport.priority === pr && styles.controlPillTextActive,
+                            ]}
+                          >
+                            {pr}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
                     </View>
                   </View>
-                );
-              })}
+
+                  {/* Quick Action Buttons */}
+                  <View style={styles.quickActionRow}>
+                    <TouchableOpacity
+                      style={styles.labCertBtn}
+                      onPress={() => {
+                        setLabPh(inspectingReport.ph ? String(inspectingReport.ph) : '');
+                        setLabTds(inspectingReport.tds ? String(inspectingReport.tds) : '');
+                        setLabFluoride(inspectingReport.fluoride ? String(inspectingReport.fluoride) : '');
+                        setLabNitrate(inspectingReport.nitrate ? String(inspectingReport.nitrate) : '');
+                        setLabRefNo(inspectingReport.report_reference_no || '');
+                        setShowLabModal(true);
+                      }}
+                    >
+                      <ShieldAlert size={14} color="#ffffff" />
+                      <Text style={styles.labCertBtnText}>Record Lab Verification</Text>
+                    </TouchableOpacity>
+
+                    {adminUser?.role === 'super_admin' && (
+                      <TouchableOpacity
+                        style={styles.deleteReportBtn}
+                        onPress={() => handleDeleteReport(inspectingReport.id)}
+                      >
+                        <Trash2 size={14} color={Colors.danger} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* Follow-up Notes Thread */}
+                  <View style={styles.notesSection}>
+                    <Text style={styles.notesSectionTitle}>Follow-up Notes & Timeline</Text>
+                    <View style={styles.addNoteRow}>
+                      <TextInput
+                        style={styles.addNoteInput}
+                        value={newNoteText}
+                        onChangeText={setNewNoteText}
+                        placeholder="Add field inspection note..."
+                        placeholderTextColor={Colors.slate400}
+                      />
+                      <TouchableOpacity
+                        style={styles.addNoteBtn}
+                        onPress={handleAddFollowupNote}
+                        disabled={addingNote}
+                      >
+                        <Check size={14} color="#ffffff" />
+                      </TouchableOpacity>
+                    </View>
+
+                    {followupNotes.map((note) => (
+                      <View key={note.id} style={styles.noteItem}>
+                        <View style={styles.noteHeader}>
+                          <Text style={styles.noteAuthor}>{note.officer_name}</Text>
+                          <Text style={styles.noteTime}>{note.created_at.slice(0, 16)}</Text>
+                        </View>
+                        <Text style={styles.noteBody}>{note.note}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </ScrollView>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* LAB VERIFICATION MODAL */}
+      <Modal visible={showLabModal} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalIdText}>{t.lab_section}</Text>
+              <TouchableOpacity onPress={() => setShowLabModal(false)}>
+                <X size={20} color={Colors.slate500} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{t.lab_ref_no}</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={labRefNo}
+                  onChangeText={setLabRefNo}
+                  placeholder="e.g. RWS-GNT-2026-904"
+                  placeholderTextColor={Colors.slate400}
+                />
+              </View>
+
+              <View style={styles.rowTwoCols}>
+                <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                  <Text style={styles.inputLabel}>pH (6.5 - 8.5)</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={labPh}
+                    onChangeText={setLabPh}
+                    placeholder="7.2"
+                    keyboardType="numeric"
+                    placeholderTextColor={Colors.slate400}
+                  />
+                </View>
+
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>TDS mg/L (&lt; 500)</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={labTds}
+                    onChangeText={setLabTds}
+                    placeholder="420"
+                    keyboardType="numeric"
+                    placeholderTextColor={Colors.slate400}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.rowTwoCols}>
+                <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                  <Text style={styles.inputLabel}>Fluoride mg/L (&lt; 1.0)</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={labFluoride}
+                    onChangeText={setLabFluoride}
+                    placeholder="0.8"
+                    keyboardType="numeric"
+                    placeholderTextColor={Colors.slate400}
+                  />
+                </View>
+
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>Nitrate mg/L (&lt; 45)</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={labNitrate}
+                    onChangeText={setLabNitrate}
+                    placeholder="22"
+                    keyboardType="numeric"
+                    placeholderTextColor={Colors.slate400}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>E. coli / Bacteria</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={labEColi}
+                  onChangeText={setLabEColi}
+                  placeholder="Absent (Safe)"
+                  placeholderTextColor={Colors.slate400}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={styles.saveLabBtn}
+                onPress={handleSaveLabTest}
+                disabled={savingLab}
+              >
+                {savingLab ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Check size={16} color="#ffffff" />
+                )}
+                <Text style={styles.saveLabBtnText}>Certify Lab Test Results</Text>
+              </TouchableOpacity>
             </ScrollView>
-          )}
-        </SafeAreaView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* PASSWORD CHANGE MODAL */}
+      <Modal visible={showPwdModal} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalIdText}>{t.btn_change_pwd}</Text>
+              <TouchableOpacity onPress={() => setShowPwdModal(false)}>
+                <X size={20} color={Colors.slate500} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Current Password</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={currentPwd}
+                  onChangeText={setCurrentPwd}
+                  secureTextEntry
+                  placeholder="••••••••"
+                  placeholderTextColor={Colors.slate400}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>New Password</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={newPwd}
+                  onChangeText={setNewPwd}
+                  secureTextEntry
+                  placeholder="At least 8 characters"
+                  placeholderTextColor={Colors.slate400}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={styles.saveLabBtn}
+                onPress={handleChangePassword}
+                disabled={changingPwd}
+              >
+                <Text style={styles.saveLabBtnText}>Update Password</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -697,662 +1136,606 @@ export default function AboutScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#F8FAFC',
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: '#E2E8F0',
   },
-  headerLeft: {
+  headerTitleGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-  },
-  headerIconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
   },
   headerTitle: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '800',
-    color: Colors.slate900,
+    color: Colors.navy,
   },
-  headerSubtitle: {
+  cspBadge: {
+    backgroundColor: Colors.primaryBg,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  cspBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: Colors.primary,
+  },
+  langPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primaryBg,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  langPillText: {
     fontSize: 11,
-    color: Colors.slate500,
+    fontWeight: '700',
+    color: Colors.primary,
+    marginLeft: 4,
   },
-  container: {
+  scroll: {
     flex: 1,
-    backgroundColor: '#f8fafc',
   },
   scrollContent: {
     padding: 16,
-    gap: 14,
-    paddingBottom: 36,
+    paddingBottom: 40,
   },
   card: {
     backgroundColor: '#ffffff',
-    borderRadius: 18,
+    borderRadius: 16,
     padding: 16,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#E2E8F0',
     ...Shadows.card,
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   cardTitle: {
     fontSize: 15,
     fontWeight: '800',
-    color: Colors.slate900,
+    color: Colors.navy,
   },
-  bodyText: {
+  serverStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  serverStatusText: {
     fontSize: 13,
-    color: Colors.slate600,
-    lineHeight: 20,
+    fontWeight: '600',
+    color: Colors.navy,
   },
-  highlightBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    backgroundColor: Colors.mint50,
-    borderWidth: 1,
-    borderColor: Colors.mint200,
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 12,
+  activeUrlText: {
+    fontSize: 11,
+    color: Colors.slate400,
   },
-  highlightText: {
-    flex: 1,
+  loginForm: {
+    marginTop: 4,
+  },
+  loginDesc: {
     fontSize: 12,
-    color: Colors.slate700,
-    lineHeight: 18,
+    color: Colors.slate500,
+    marginBottom: 12,
   },
-  disclaimerCard: {
-    backgroundColor: '#fffbeb',
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#fef3c7',
-    ...Shadows.card,
-  },
-  disclaimerHeader: {
+  errorBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 10,
-  },
-  disclaimerTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: Colors.warning,
-    letterSpacing: 0.5,
-  },
-  disclaimerBody: {
-    fontSize: 12,
-    color: '#92400e',
-    lineHeight: 18,
-    marginBottom: 8,
-  },
-  adminActiveBox: {
-    gap: 10,
-  },
-  adminBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#f0fdfa',
+    backgroundColor: Colors.dangerBg,
     padding: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#ccfbf1',
-  },
-  adminAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#ccfbf1',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  adminUserText: {
-    fontSize: 12,
-    color: Colors.slate800,
-  },
-  adminRoleText: {
-    fontSize: 11,
-    color: Colors.primaryDark,
-    fontWeight: '600',
-  },
-  openAdminModalBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: Colors.primary,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  openAdminModalBtnText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  adminLogoutBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    paddingVertical: 6,
-  },
-  adminLogoutText: {
-    color: '#dc2626',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  adminLoginBox: {
-    gap: 10,
-  },
-  adminLoginSubtitle: {
-    fontSize: 12,
-    color: Colors.slate600,
-    lineHeight: 17,
-  },
-  adminErrorBanner: {
-    backgroundColor: '#fef2f2',
-    borderWidth: 1,
-    borderColor: '#fee2e2',
     borderRadius: 8,
-    padding: 8,
+    marginBottom: 12,
+    gap: 6,
   },
-  adminErrorText: {
-    fontSize: 11,
-    color: '#dc2626',
-    fontWeight: '600',
+  errorBoxText: {
+    fontSize: 12,
+    color: Colors.danger,
   },
   inputGroup: {
-    gap: 4,
+    marginBottom: 10,
+  },
+  rowTwoCols: {
+    flexDirection: 'row',
   },
   inputLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: Colors.slate700,
+    color: Colors.navy,
+    marginBottom: 4,
   },
   textInput: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     fontSize: 13,
-    color: Colors.slate800,
+    color: Colors.navy,
   },
-  adminLoginBtn: {
+  loginBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    backgroundColor: Colors.primary,
-    paddingVertical: 10,
+    backgroundColor: Colors.navy,
     borderRadius: 10,
-    marginTop: 4,
+    paddingVertical: 12,
+    marginTop: 6,
+    gap: 6,
   },
-  adminLoginBtnText: {
+  loginBtnText: {
     color: '#ffffff',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '800',
   },
-  statusRow: {
+  profileBar: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
     padding: 12,
     borderRadius: 12,
-    marginBottom: 10,
+    marginBottom: 12,
   },
-  statusLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: Colors.slate400,
-    letterSpacing: 0.5,
-    marginBottom: 2,
-  },
-  statusUrl: {
-    fontSize: 11,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    color: Colors.slate700,
-    fontWeight: '600',
-  },
-  statusBadge: {
+  profileInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 100,
-    backgroundColor: '#f1f5f9',
-  },
-  statusBadgeOnline: {
-    backgroundColor: '#dcfce7',
-  },
-  statusBadgeOffline: {
-    backgroundColor: '#fee2e2',
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#94a3b8',
-  },
-  statusBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.slate600,
-  },
-  refreshServerBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    backgroundColor: Colors.primaryBg,
-    borderRadius: 10,
-  },
-  refreshServerBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.primaryDark,
-  },
-  infoTipBox: {
-    marginTop: 8,
-    padding: 8,
-    backgroundColor: '#f8fafc',
-    borderRadius: 8,
-  },
-  infoTipText: {
-    fontSize: 10,
-    color: Colors.slate500,
-    lineHeight: 14,
-  },
-  techList: {
     gap: 8,
   },
-  techItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+  profileName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: Colors.navy,
   },
-  techLabel: {
+  profileRole: {
+    fontSize: 11,
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+  profileActions: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  actionIconBtn: {
+    backgroundColor: '#ffffff',
+    padding: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  logoutBtn: {
+    backgroundColor: Colors.dangerBg,
+    padding: 8,
+    borderRadius: 8,
+  },
+  adminNavTabs: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    marginBottom: 12,
+  },
+  adminNavTab: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginRight: 6,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  adminNavTabActive: {
+    borderBottomColor: Colors.primary,
+  },
+  adminNavTabText: {
     fontSize: 12,
+    fontWeight: '600',
     color: Colors.slate500,
   },
-  techVal: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.slate800,
+  adminNavTabTextActive: {
+    color: Colors.primary,
+    fontWeight: '800',
   },
-  teamBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: Colors.primaryBg,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+  tabContent: {
+    marginTop: 4,
+  },
+  adminFilterRow: {
+    marginBottom: 10,
+  },
+  adminSearchInput: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     borderRadius: 8,
-    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 12,
   },
-  teamBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.primaryDark,
+  adminReportCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  footer: {
+  adminCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
-    gap: 4,
+    marginBottom: 4,
   },
-  footerVersion: {
-    fontSize: 11,
+  adminReportId: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: Colors.navy,
+  },
+  adminStatusPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  adminStatusText: {
+    fontSize: 9,
     fontWeight: '700',
-    color: Colors.slate600,
   },
-  footerCopyright: {
+  adminCategoryText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.slate700,
+  },
+  adminVillageText: {
+    fontSize: 11,
+    color: Colors.slate500,
+    marginTop: 2,
+  },
+  adminAssignedText: {
+    fontSize: 10,
+    color: Colors.primary,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  tabHeaderDesc: {
+    fontSize: 12,
+    color: Colors.slate500,
+    marginBottom: 8,
+  },
+  emptyNoticeText: {
+    fontSize: 12,
+    color: Colors.slate400,
+    paddingVertical: 12,
+  },
+  clusterCard: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+  },
+  clusterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  clusterTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: Colors.warning,
+  },
+  clusterDistance: {
+    fontSize: 11,
+    color: Colors.slate600,
+    marginTop: 2,
+  },
+  clusterIds: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.navy,
+    marginTop: 2,
+  },
+  logCard: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    padding: 8,
+    marginBottom: 6,
+  },
+  logHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  logAction: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: Colors.navy,
+  },
+  logTime: {
     fontSize: 10,
     color: Colors.slate400,
   },
-  // Modal styles
-  modalSafeArea: {
+  logDetails: {
+    fontSize: 11,
+    color: Colors.slate600,
+    marginTop: 2,
+  },
+  logSubDetails: {
+    fontSize: 10,
+    color: Colors.slate500,
+  },
+  bold: {
+    fontWeight: '700',
+  },
+  createUserBox: {
+    backgroundColor: '#F8FAFC',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  createBoxTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: Colors.navy,
+    marginBottom: 8,
+  },
+  rolePickerRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginVertical: 4,
+  },
+  roleChip: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+  },
+  roleChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  roleChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.slate600,
+  },
+  roleChipTextActive: {
+    color: '#ffffff',
+    fontWeight: '700',
+  },
+  addUserBtn: {
+    backgroundColor: Colors.navy,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  addUserBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  userCard: {
+    backgroundColor: '#F8FAFC',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  userName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.navy,
+  },
+  userRole: {
+    fontSize: 11,
+    color: Colors.primary,
+  },
+  aboutText: {
+    fontSize: 12,
+    color: Colors.slate600,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  // Inspection Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+    padding: 16,
   },
   modalHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    borderBottomColor: '#E2E8F0',
   },
-  modalTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: Colors.slate900,
+  modalIdText: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: Colors.navy,
   },
-  modalSubtitle: {
-    fontSize: 11,
+  modalCategoryText: {
+    fontSize: 12,
     color: Colors.slate500,
   },
-  modalCloseBtn: {
-    padding: 6,
-    borderRadius: 14,
-    backgroundColor: '#f1f5f9',
+  modalBody: {
+    marginVertical: 10,
   },
-  filterRow: {
+  inspectPhoto: {
+    width: '100%',
+    height: 180,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  inspectControlsBox: {
+    backgroundColor: '#F8FAFC',
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 10,
+  },
+  controlLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.navy,
+    marginBottom: 6,
+  },
+  pillRow: {
     flexDirection: 'row',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    flexWrap: 'wrap',
     gap: 6,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
   },
-  filterChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 100,
-    backgroundColor: '#f1f5f9',
-  },
-  filterChipActive: {
-    backgroundColor: Colors.primary,
-  },
-  filterChipText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.slate600,
-  },
-  filterChipTextActive: {
-    color: '#ffffff',
-  },
-  modalActionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#f8fafc',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-  },
-  modalReportCount: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.slate500,
-  },
-  exportCsvBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
+  controlPill: {
     backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  exportCsvBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.primaryDark,
-  },
-  modalCenter: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  loadingText: {
-    fontSize: 12,
-    color: Colors.slate500,
-    marginTop: 8,
-  },
-  emptyText: {
-    fontSize: 13,
-    color: Colors.slate500,
-  },
-  adminReportsList: {
-    padding: 14,
-    gap: 12,
-  },
-  adminReportCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    ...Shadows.card,
-    gap: 8,
-  },
-  adminCardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  adminIdBadge: {
-    backgroundColor: Colors.primaryBg,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  adminIdText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: Colors.primaryDark,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-  },
-  adminVillageText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.slate700,
-    flex: 1,
-  },
-  adminDateText: {
-    fontSize: 11,
-    color: Colors.slate400,
-  },
-  adminReportTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: Colors.slate900,
-  },
-  adminReportDesc: {
-    fontSize: 12,
-    color: Colors.slate600,
-    lineHeight: 17,
-  },
-  reporterContactBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#f1f5f9',
+    borderColor: '#E2E8F0',
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingVertical: 5,
+    borderRadius: 8,
   },
-  reporterContactLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.slate500,
-  },
-  reporterContactValue: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.slate800,
-  },
-  verificationToggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 4,
-  },
-  checkboxBox: {
-    width: 18,
-    height: 18,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    borderColor: '#cbd5e1',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#ffffff',
-  },
-  checkboxBoxActive: {
+  controlPillActive: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
   },
-  verificationToggleText: {
+  controlPillText: {
     fontSize: 11,
-    fontWeight: '700',
-    color: Colors.slate700,
-  },
-  statusButtonGroup: {
-    gap: 4,
-    marginTop: 4,
-  },
-  statusGroupLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.slate400,
-  },
-  statusBtnRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  statusBtn: {
-    flex: 1,
-    paddingVertical: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f8fafc',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  statusBtnActive: {
-    backgroundColor: Colors.primaryBg,
-    borderColor: Colors.primary,
-  },
-  statusBtnText: {
-    fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '600',
     color: Colors.slate600,
   },
-  statusBtnTextActive: {
-    color: Colors.primaryDark,
+  controlPillTextActive: {
+    color: '#ffffff',
+    fontWeight: '700',
+  },
+  quickActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  labCertBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.success,
+    paddingVertical: 10,
+    borderRadius: 10,
+    gap: 6,
+  },
+  labCertBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  deleteReportBtn: {
+    backgroundColor: Colors.dangerBg,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   notesSection: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    paddingTop: 10,
   },
-  notesHeader: {
+  notesSectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: Colors.navy,
+    marginBottom: 8,
+  },
+  addNoteRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  notesLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.slate500,
-  },
-  editNotesBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.primaryDark,
-  },
-  notesContent: {
-    fontSize: 11,
-    color: Colors.slate700,
-    fontStyle: 'italic',
-  },
-  notesEditBox: {
     gap: 6,
+    marginBottom: 10,
   },
-  notesInput: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 6,
-    padding: 8,
-    fontSize: 11,
-    color: Colors.slate800,
-    minHeight: 50,
-  },
-  notesBtnRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 6,
-  },
-  saveNotesBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-  },
-  saveNotesBtnText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  cancelNotesBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-  },
-  cancelNotesBtnText: {
-    color: Colors.slate500,
-    fontSize: 11,
-  },
-  langBtn: {
+  addNoteInput: {
     flex: 1,
-    paddingVertical: 10,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 12,
+  },
+  addNoteBtn: {
+    backgroundColor: Colors.primary,
     paddingHorizontal: 12,
-    borderRadius: 12,
-    backgroundColor: '#ffffff',
-    borderWidth: 1.5,
-    borderColor: '#e2e8f0',
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  langBtnActive: {
-    backgroundColor: '#f0fdfa',
-    borderColor: Colors.primary,
+  noteItem: {
+    backgroundColor: '#F8FAFC',
+    padding: 8,
+    borderRadius: 8,
+    marginBottom: 6,
   },
-  langBtnText: {
-    fontSize: 12,
+  noteHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  noteAuthor: {
+    fontSize: 11,
     fontWeight: '700',
+    color: Colors.navy,
+  },
+  noteTime: {
+    fontSize: 10,
+    color: Colors.slate400,
+  },
+  noteBody: {
+    fontSize: 12,
     color: Colors.slate700,
   },
-  langBtnTextActive: {
-    color: Colors.primaryDark,
+  saveLabBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.success,
+    paddingVertical: 12,
+    borderRadius: 10,
+    marginTop: 10,
+    gap: 6,
+  },
+  saveLabBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

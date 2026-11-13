@@ -36,8 +36,12 @@ export const Colors = {
   // Errors / Danger (Red / Rose)
   error: '#ef4444',
   errorBg: '#fef2f2',
+  danger: '#ef4444',
+  dangerBg: '#fef2f2',
+  dangerBorder: '#fecaca',
 
-  // Neutrals
+  // Brand Navy & Neutrals
+  navy: '#0f172a',
   white: '#ffffff',
   slate50: '#f8fafc',
   slate100: '#f1f5f9',

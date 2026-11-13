@@ -1,27 +1,75 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { 
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, 
-  ActivityIndicator, RefreshControl, Platform, TextInput 
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  RefreshControl,
+  Platform,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { 
-  Droplets, AlertTriangle, ShieldCheck, FileText, 
-  MapPin, Plus, RefreshCw, Settings, Check, X 
+import {
+  Droplets,
+  AlertTriangle,
+  ShieldCheck,
+  FileText,
+  MapPin,
+  Plus,
+  RefreshCw,
+  Settings,
+  Check,
+  X,
+  Globe,
+  TrendingUp,
+  Clock,
+  CheckCircle,
+  ExternalLink,
+  ChevronRight,
+  Sparkles,
 } from 'lucide-react-native';
 import { Colors, Shadows } from '../../constants/theme';
-import { fetchReports, Report, setApiBaseUrl, getApiBaseUrl } from '../../services/api';
+import {
+  fetchReports,
+  fetchStats,
+  Report,
+  Stats,
+  setApiBaseUrl,
+  getApiBaseUrl,
+  PRODUCTION_API_URL,
+} from '../../services/api';
 import LiveMapNative from '../../components/LiveMapNative';
 import ReportDetailsSheet from '../../components/ReportDetailsSheet';
+import {
+  translations,
+  LanguageCode,
+  getSavedLanguage,
+  saveLanguage,
+} from '../../constants/translations';
 
-export default function LiveMapScreen() {
+export default function HomeScreen() {
   const router = useRouter();
+
+  // Language state
+  const [lang, setLang] = useState<LanguageCode>('en');
+  const t = translations[lang];
+
+  // Data states
   const [reports, setReports] = useState<Report[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // View state: 'map' or 'feed'
+  const [activeView, setActiveView] = useState<'map' | 'feed'>('map');
+
+  // Config modal
   const [showConfig, setShowConfig] = useState(false);
   const [customUrlInput, setCustomUrlInput] = useState(getApiBaseUrl());
   const initialSelectDoneRef = useRef(false);
@@ -32,16 +80,21 @@ export default function LiveMapScreen() {
     }
     try {
       setError(null);
-      const data = await fetchReports({ limit: 50 });
-      setReports(data);
-      // On initial app launch, auto-select first report in collapsed preview
-      if (data.length > 0 && !initialSelectDoneRef.current) {
+      const [reportsData, statsData] = await Promise.all([
+        fetchReports({ limit: 50 }).catch(() => []),
+        fetchStats().catch(() => null),
+      ]);
+
+      setReports(reportsData);
+      setStats(statsData);
+
+      if (reportsData.length > 0 && !initialSelectDoneRef.current) {
         initialSelectDoneRef.current = true;
-        setSelectedReport(data[0]);
+        setSelectedReport(reportsData[0]);
       }
     } catch (err: any) {
       console.warn('Load reports error:', err.message);
-      setError(err.message || 'Could not connect to JalaWatch server. Check if backend is running.');
+      setError(err.message || 'Could not connect to JalaWatch server.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -50,6 +103,7 @@ export default function LiveMapScreen() {
   }, []);
 
   useEffect(() => {
+    getSavedLanguage().then((l) => setLang(l));
     loadData();
   }, [loadData]);
 
@@ -58,13 +112,10 @@ export default function LiveMapScreen() {
     loadData(true);
   };
 
-  const handleCardPress = (report: Report) => {
-    setSelectedReport(report);
-  };
-
-  const handleNavigateSafety = () => {
-    setSelectedReport(null);
-    router.push('/(tabs)/safety');
+  const handleToggleLang = async () => {
+    const nextLang: LanguageCode = lang === 'en' ? 'te' : 'en';
+    setLang(nextLang);
+    await saveLanguage(nextLang);
   };
 
   const handleSaveCustomUrl = () => {
@@ -77,32 +128,117 @@ export default function LiveMapScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      
-      {/* Compact White Header (Matching Reference Image 3) */}
+      {/* Top Branding App Bar */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <View style={styles.logoCircle}>
-            <Droplets size={16} color="#ffffff" strokeWidth={2.5} />
+            <Droplets size={18} color="#ffffff" strokeWidth={2.5} />
           </View>
           <View>
             <View style={styles.titleRow}>
-              <Text style={styles.brandTitle}>JalaWatch</Text>
+              <Text style={styles.brandTitle}>{t.home_title}</Text>
               <View style={styles.cspPill}>
                 <Text style={styles.cspPillText}>NUTAKKI CSP</Text>
               </View>
             </View>
-            <Text style={styles.brandSubtitle}>Groundwater & Seepage Monitor</Text>
+            <Text style={styles.brandSubtitle}>{t.home_subtitle}</Text>
           </View>
         </View>
 
-        <TouchableOpacity 
-          style={styles.headerReportBtn} 
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={styles.langPill}
+            onPress={handleToggleLang}
+            activeOpacity={0.8}
+          >
+            <Globe size={13} color={Colors.primary} />
+            <Text style={styles.langPillText}>{t.lang_toggle}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.headerReportBtn}
+            onPress={() => router.push('/(tabs)/report')}
+            activeOpacity={0.8}
+          >
+            <Plus size={14} color="#ffffff" strokeWidth={3} />
+            <Text style={styles.headerReportText}>{t.tab_report}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* KPI Dashboard Summary Strip */}
+      <View style={styles.kpiContainer}>
+        <View style={styles.kpiItem}>
+          <Text style={styles.kpiValue}>
+            {stats ? stats.total_reports : reports.length}
+          </Text>
+          <Text style={styles.kpiLabel}>{t.kpi_total}</Text>
+        </View>
+
+        <View style={styles.kpiDivider} />
+
+        <View style={styles.kpiItem}>
+          <Text style={[styles.kpiValue, { color: Colors.warning }]}>
+            {stats ? stats.under_review : reports.filter((r) => r.status === 'Under Review').length}
+          </Text>
+          <Text style={styles.kpiLabel}>{t.kpi_under_review}</Text>
+        </View>
+
+        <View style={styles.kpiDivider} />
+
+        <View style={styles.kpiItem}>
+          <Text style={[styles.kpiValue, { color: Colors.success }]}>
+            {stats ? stats.resolved : reports.filter((r) => r.status === 'Resolved').length}
+          </Text>
+          <Text style={styles.kpiLabel}>{t.kpi_resolved}</Text>
+        </View>
+
+        <View style={styles.kpiDivider} />
+
+        <View style={styles.kpiItem}>
+          <Text style={[styles.kpiValue, { color: Colors.navy }]}>
+            {stats ? stats.villages_impacted : 4}
+          </Text>
+          <Text style={styles.kpiLabel}>{t.kpi_villages}</Text>
+        </View>
+      </View>
+
+      {/* Quick Action Navigation Bar */}
+      <View style={styles.quickActionBar}>
+        <TouchableOpacity
+          style={styles.quickActionBtnPrimary}
           onPress={() => router.push('/(tabs)/report')}
           activeOpacity={0.8}
         >
-          <Plus size={14} color="#ffffff" strokeWidth={3} />
-          <Text style={styles.headerReportText}>Report</Text>
+          <Plus size={14} color="#ffffff" strokeWidth={2.5} />
+          <Text style={styles.quickActionBtnPrimaryText}>{t.btn_quick_report}</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.quickActionBtnSecondary}
+          onPress={() => router.push('/(tabs)/safety')}
+          activeOpacity={0.8}
+        >
+          <ShieldCheck size={14} color={Colors.primary} strokeWidth={2.2} />
+          <Text style={styles.quickActionBtnSecondaryText}>{t.btn_view_safety}</Text>
+        </TouchableOpacity>
+
+        {/* View Toggle (Map vs Feed) */}
+        <View style={styles.viewToggleGroup}>
+          <TouchableOpacity
+            style={[styles.viewToggleBtn, activeView === 'map' && styles.viewToggleBtnActive]}
+            onPress={() => setActiveView('map')}
+          >
+            <MapPin size={14} color={activeView === 'map' ? '#ffffff' : Colors.slate500} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.viewToggleBtn, activeView === 'feed' && styles.viewToggleBtnActive]}
+            onPress={() => setActiveView('feed')}
+          >
+            <FileText size={14} color={activeView === 'feed' ? '#ffffff' : Colors.slate500} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Main Content Area */}
@@ -110,12 +246,11 @@ export default function LiveMapScreen() {
         {loading ? (
           <View style={styles.centerContainer}>
             <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={styles.loadingText}>Loading groundwater observations...</Text>
+            <Text style={styles.loadingText}>Loading groundwater surveillance data...</Text>
             <Text style={styles.loadingSubtext}>Connecting to JalaWatch cloud server...</Text>
           </View>
-        ) : (
+        ) : activeView === 'map' ? (
           <View style={styles.mapWrapper}>
-            {/* Native Interactive Map (loads independently of backend) */}
             <LiveMapNative
               reports={reports}
               selectedReport={selectedReport}
@@ -124,7 +259,7 @@ export default function LiveMapScreen() {
               refreshing={refreshing}
             />
 
-            {/* Floating Connection Notice Card when server is offline */}
+            {/* Floating Connection Notice Card when server error */}
             {error && (
               <View style={styles.errorNoticeCard}>
                 <View style={styles.errorNoticeHeader}>
@@ -132,94 +267,144 @@ export default function LiveMapScreen() {
                     <AlertTriangle size={18} color={Colors.warning} />
                     <Text style={styles.errorNoticeTitle}>Backend Connection Notice</Text>
                   </View>
-                  <TouchableOpacity 
-                    onPress={() => setError(null)} 
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
+                  <TouchableOpacity onPress={() => setError(null)}>
                     <X size={16} color={Colors.slate400} />
                   </TouchableOpacity>
                 </View>
 
-                <ScrollView style={styles.errorScrollArea} showsVerticalScrollIndicator={true}>
+                <ScrollView style={styles.errorScrollArea}>
                   <Text style={styles.errorNoticeDesc}>{error}</Text>
                 </ScrollView>
 
-                {showConfig ? (
-                  <View style={styles.customUrlBox}>
-                    <Text style={styles.customUrlLabel}>Laptop IP or Online Backend URL:</Text>
-                    <TextInput
-                      style={styles.customUrlInput}
-                      value={customUrlInput}
-                      onChangeText={setCustomUrlInput}
-                      placeholder="e.g. http://192.168.x.x:5000 or https://..."
-                      placeholderTextColor={Colors.slate400}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                    <View style={styles.customUrlBtnRow}>
-                      <TouchableOpacity
-                        style={styles.saveUrlBtn}
-                        onPress={handleSaveCustomUrl}
-                      >
-                        <Check size={14} color="#ffffff" />
-                        <Text style={styles.saveUrlBtnText}>Save & Connect</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.cancelUrlBtn}
-                        onPress={() => setShowConfig(false)}
-                      >
-                        <Text style={styles.cancelUrlBtnText}>Cancel</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ) : (
-                  <View style={styles.noticeActionRow}>
-                    <TouchableOpacity
-                      style={[styles.retryBtn, retrying && styles.retryBtnDisabled]}
-                      onPress={() => loadData(true)}
-                      disabled={retrying}
-                      activeOpacity={0.8}
-                    >
-                      {retrying ? (
-                        <ActivityIndicator size="small" color="#ffffff" />
-                      ) : (
-                        <RefreshCw size={13} color="#ffffff" />
-                      )}
-                      <Text style={styles.retryBtnText}>
-                        {retrying ? 'Connecting...' : 'Retry Connection'}
-                      </Text>
-                    </TouchableOpacity>
+                <View style={styles.noticeActionRow}>
+                  <TouchableOpacity
+                    style={[styles.retryBtn, retrying && styles.retryBtnDisabled]}
+                    onPress={() => loadData(true)}
+                    disabled={retrying}
+                    activeOpacity={0.8}
+                  >
+                    {retrying ? (
+                      <ActivityIndicator size="small" color="#ffffff" />
+                    ) : (
+                      <RefreshCw size={13} color="#ffffff" />
+                    )}
+                    <Text style={styles.retryBtnText}>
+                      {retrying ? 'Connecting...' : 'Retry Connection'}
+                    </Text>
+                  </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={styles.configToggleBtn}
-                      onPress={() => {
-                        setCustomUrlInput(getApiBaseUrl());
-                        setShowConfig(true);
-                      }}
-                      activeOpacity={0.8}
-                    >
-                      <Settings size={13} color={Colors.primaryDark} />
-                      <Text style={styles.configToggleText}>Change URL / IP</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
+                  <TouchableOpacity
+                    style={styles.configToggleBtn}
+                    onPress={() => {
+                      setCustomUrlInput(getApiBaseUrl());
+                      setShowConfig(true);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Settings size={13} color={Colors.primary} />
+                    <Text style={styles.configToggleBtnText}>Server</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
 
-            {/* Floating White Report-Details Bottom Sheet */}
+            {/* Bottom Sheet for Selected Map Report */}
             {selectedReport && (
-              <View style={styles.sheetOverlay} pointerEvents="box-none">
-                <ReportDetailsSheet
-                  report={selectedReport}
-                  onClose={() => setSelectedReport(null)}
-                  onNavigateSafety={handleNavigateSafety}
-                />
-              </View>
+              <ReportDetailsSheet
+                report={selectedReport}
+                onClose={() => setSelectedReport(null)}
+                onNavigateSafety={() => router.push('/(tabs)/safety')}
+                initialExpanded={false}
+              />
             )}
           </View>
+        ) : (
+          /* Recent Observations Feed View */
+          <ScrollView
+            style={styles.feedScroll}
+            contentContainerStyle={styles.feedContent}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          >
+            <View style={styles.feedHeaderRow}>
+              <Text style={styles.feedSectionTitle}>{t.recent_reports}</Text>
+              <TouchableOpacity onPress={() => router.push('/(tabs)/reports')}>
+                <Text style={styles.viewAllText}>View All ({reports.length}) →</Text>
+              </TouchableOpacity>
+            </View>
+
+            {reports.map((report) => (
+              <TouchableOpacity
+                key={report.id}
+                style={styles.feedCard}
+                onPress={() => {
+                  setSelectedReport(report);
+                  setActiveView('map');
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={styles.feedCardTop}>
+                  <View style={styles.feedIdGroup}>
+                    <Text style={styles.feedId}>{report.id}</Text>
+                    {report.is_verified && (
+                      <View style={styles.verifiedBadge}>
+                        <Check size={10} color="#ffffff" />
+                        <Text style={styles.verifiedBadgeText}>Verified</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View
+                    style={[
+                      styles.statusPill,
+                      report.status === 'Resolved'
+                        ? { backgroundColor: Colors.successBg }
+                        : report.status === 'Under Review'
+                          ? { backgroundColor: Colors.warningBg }
+                          : { backgroundColor: Colors.primaryBg },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.statusPillText,
+                        report.status === 'Resolved'
+                          ? { color: Colors.success }
+                          : report.status === 'Under Review'
+                            ? { color: Colors.warning }
+                            : { color: Colors.primary },
+                      ]}
+                    >
+                      {report.status}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.feedCategory}>{report.category}</Text>
+                <Text style={styles.feedDesc} numberOfLines={2}>
+                  {report.description}
+                </Text>
+
+                <View style={styles.feedMetaRow}>
+                  <Text style={styles.feedMetaText}>📍 {report.village}</Text>
+                  <Text style={styles.feedMetaText}>📅 {report.date_observed}</Text>
+                  {report.priority && (
+                    <Text
+                      style={[
+                        styles.feedPriorityText,
+                        report.priority === 'Urgent'
+                          ? { color: Colors.danger }
+                          : report.priority === 'High'
+                            ? { color: Colors.warning }
+                            : { color: Colors.slate600 },
+                      ]}
+                    >
+                      ⚡ {report.priority}
+                    </Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         )}
       </View>
-
     </SafeAreaView>
   );
 }
@@ -231,156 +416,212 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: '#F1F5F9',
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
   logoCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 10,
   },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
   },
   brandTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: Colors.slate900,
+    fontSize: 16,
+    fontWeight: '800',
+    color: Colors.navy,
   },
   cspPill: {
-    backgroundColor: Colors.mint100,
+    backgroundColor: Colors.primaryBg,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 100,
+    borderRadius: 6,
+    marginLeft: 6,
   },
   cspPillText: {
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: '800',
-    color: Colors.mint700,
-    letterSpacing: 0.5,
+    color: Colors.primary,
   },
   brandSubtitle: {
-    fontSize: 10,
-    color: Colors.slate400,
-    fontWeight: '600',
+    fontSize: 11,
+    color: Colors.slate500,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  langPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primaryBg,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 14,
+  },
+  langPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.primary,
+    marginLeft: 4,
   },
   headerReportBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
     backgroundColor: Colors.primary,
     paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 100,
-    ...Shadows.pill,
+    paddingVertical: 6,
+    borderRadius: 14,
+    gap: 4,
   },
   headerReportText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  content: {
-    flex: 1,
-    position: 'relative',
-    backgroundColor: '#e2f1f1',
-  },
-  mapWrapper: {
-    flex: 1,
-    position: 'relative',
-  },
-  sheetOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    justifyContent: 'flex-end',
-    zIndex: 100,
-  },
-  centerContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    gap: 8,
-    backgroundColor: '#ffffff',
-  },
-  loadingText: {
-    fontSize: 12,
-    color: Colors.slate500,
-    fontWeight: '600',
-    marginTop: 8,
-  },
-  loadingSubtext: {
-    fontSize: 11,
-    color: Colors.slate400,
-    marginTop: 4,
-  },
-  errorTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: Colors.slate800,
-    marginTop: 4,
-  },
-  errorSubtitle: {
-    fontSize: 12,
-    color: Colors.slate500,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 8,
-  },
-  retryBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 10,
-  },
-  retryBtnDisabled: {
-    opacity: 0.7,
-  },
-  retryBtnText: {
     color: '#ffffff',
     fontSize: 12,
     fontWeight: '700',
   },
+  kpiContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  kpiItem: {
+    alignItems: 'center',
+    paddingHorizontal: 6,
+  },
+  kpiValue: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: Colors.primary,
+  },
+  kpiLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: Colors.slate500,
+    marginTop: 1,
+  },
+  kpiDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: '#E2E8F0',
+  },
+  quickActionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    gap: 8,
+  },
+  quickActionBtnPrimary: {
+    flex: 1.2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    gap: 6,
+  },
+  quickActionBtnPrimaryText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  quickActionBtnSecondary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primaryBg,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    gap: 4,
+  },
+  quickActionBtnSecondaryText: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  viewToggleGroup: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    padding: 2,
+  },
+  viewToggleBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  viewToggleBtnActive: {
+    backgroundColor: Colors.primary,
+  },
+  content: {
+    flex: 1,
+    position: 'relative',
+  },
+  mapWrapper: {
+    flex: 1,
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.navy,
+  },
+  loadingSubtext: {
+    marginTop: 4,
+    fontSize: 12,
+    color: Colors.slate400,
+  },
   errorNoticeCard: {
     position: 'absolute',
-    bottom: 24,
-    left: 14,
-    right: 14,
+    top: 10,
+    left: 12,
+    right: 12,
     backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 12,
+    padding: 12,
     borderWidth: 1,
-    borderColor: '#fed7aa',
-    zIndex: 110,
-    ...Shadows.float,
-    gap: 8,
-    maxHeight: 280,
+    borderColor: '#FED7AA',
+    ...Shadows.card,
+    zIndex: 100,
   },
   errorNoticeHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
   },
   errorNoticeTitleRow: {
     flexDirection: 'row',
@@ -389,88 +630,153 @@ const styles = StyleSheet.create({
   },
   errorNoticeTitle: {
     fontSize: 13,
-    fontWeight: '800',
-    color: Colors.slate800,
+    fontWeight: '700',
+    color: Colors.navy,
   },
   errorScrollArea: {
-    maxHeight: 110,
+    maxHeight: 60,
+    marginBottom: 8,
   },
   errorNoticeDesc: {
     fontSize: 11,
     color: Colors.slate600,
-    lineHeight: 16,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    lineHeight: 15,
   },
   noticeActionRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    justifyContent: 'flex-end',
     gap: 8,
-    marginTop: 4,
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 6,
+  },
+  retryBtnDisabled: {
+    opacity: 0.65,
+  },
+  retryBtnText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
   },
   configToggleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
     backgroundColor: Colors.primaryBg,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 4,
   },
-  configToggleText: {
-    color: Colors.primaryDark,
+  configToggleBtnText: {
+    color: Colors.primary,
     fontSize: 11,
     fontWeight: '700',
   },
-  customUrlBox: {
-    marginTop: 4,
+  // Feed Styles
+  feedScroll: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  feedContent: {
+    padding: 16,
+    paddingBottom: 30,
+  },
+  feedHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  feedSectionTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: Colors.navy,
+  },
+  viewAllText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  feedCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    ...Shadows.card,
+  },
+  feedCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  feedIdGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
   },
-  customUrlLabel: {
-    fontSize: 11,
+  feedId: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: Colors.navy,
+  },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 2,
+  },
+  verifiedBadgeText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  statusPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  feedCategory: {
+    fontSize: 13,
     fontWeight: '700',
     color: Colors.slate700,
+    marginBottom: 4,
   },
-  customUrlInput: {
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+  feedDesc: {
     fontSize: 12,
-    color: Colors.slate800,
-  },
-  customUrlBtnRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 2,
-  },
-  saveUrlBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    backgroundColor: Colors.primary,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  saveUrlBtnText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  cancelUrlBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelUrlBtnText: {
     color: Colors.slate500,
-    fontSize: 12,
-    fontWeight: '600',
+    lineHeight: 16,
+    marginBottom: 8,
+  },
+  feedMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingTop: 8,
+  },
+  feedMetaText: {
+    fontSize: 11,
+    color: Colors.slate500,
+  },
+  feedPriorityText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
 });
