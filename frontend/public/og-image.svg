@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#042f2e" />
+      <stop offset="50%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#022c22" />
+    </linearGradient>
+    <linearGradient id="dropGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2dd4bf" />
+      <stop offset="50%" stop-color="#0d9488" />
+      <stop offset="100%" stop-color="#0f766e" />
+    </linearGradient>
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#ccfbf1" />
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#134e4a" stroke-width="0.8" opacity="0.35" />
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)" />
+  <rect width="1200" height="630" fill="url(#grid)" />
+
+  <!-- Accent Glows -->
+  <circle cx="150" cy="120" r="280" fill="#0d9488" opacity="0.18" filter="blur(70px)" />
+  <circle cx="1050" cy="500" r="320" fill="#0284c7" opacity="0.14" filter="blur(80px)" />
+
+  <!-- Logo Mark -->
+  <g transform="translate(100, 95)">
+    <!-- Droplet Shield -->
+    <path d="M 50 10 C 50 10, 15 50, 15 75 C 15 95, 30 108, 50 108 C 70 108, 85 95, 85 75 C 85 50, 50 10, 50 10 Z" fill="url(#dropGrad)" />
+    <!-- Ripple Ring -->
+    <circle cx="50" cy="75" r="18" stroke="#ffffff" stroke-width="3" stroke-dasharray="5 2" fill="none" opacity="0.9" />
+    <circle cx="50" cy="75" r="9" fill="#ffffff" />
+    <circle cx="53" cy="72" r="3" fill="#0d9488" />
+  </g>
+
+  <!-- Pill Badge -->
+  <g transform="translate(220, 108)">
+    <rect width="320" height="34" rx="17" fill="#134e4a" stroke="#2dd4bf" stroke-width="1.2" opacity="0.9" />
+    <text x="160" y="22" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#5eead4" text-anchor="middle" letter-spacing="1">
+      COMMUNITY SERVICE PROJECT (CSP)
+    </text>
+  </g>
+
+  <!-- Main Title -->
+  <text x="100" y="270" font-family="system-ui, -apple-system, sans-serif" font-size="76" font-weight="800" fill="url(#textGrad)" letter-spacing="-1.5">
+    JalaWatch
+  </text>
+
+  <!-- Subtitle -->
+  <text x="100" y="335" font-family="system-ui, -apple-system, sans-serif" font-size="30" font-weight="600" fill="#5eead4" letter-spacing="-0.5">
+    Groundwater Pollution Reporting &amp; Water Quality Portal
+  </text>
+
+  <!-- Location Tagline -->
+  <text x="100" y="385" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="400" fill="#94a3b8">
+    Nutakki Village • Guntur District • Andhra Pradesh, India
+  </text>
+
+  <!-- Feature Tags Box -->
+  <g transform="translate(100, 440)">
+    <!-- Tag 1 -->
+    <rect x="0" y="0" width="310" height="52" rx="14" fill="#0f172a" stroke="#334155" stroke-width="1" />
+    <text x="24" y="32" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="600" fill="#f1f5f9">
+      📍 Live Contamination Map
+    </text>
+
+    <!-- Tag 2 -->
+    <rect x="330" y="0" width="320" height="52" rx="14" fill="#0f172a" stroke="#334155" stroke-width="1" />
+    <text x="354" y="32" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="600" fill="#f1f5f9">
+      🧪 Certified Lab Test Data (BIS)
+    </text>
+
+    <!-- Tag 3 -->
+    <rect x="670" y="0" width="330" height="52" rx="14" fill="#0f172a" stroke="#334155" stroke-width="1" />
+    <text x="694" y="32" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="600" fill="#f1f5f9">
+      🛡️ Public Water Safety Tracking
+    </text>
+  </g>
+
+  <!-- Bottom URL Bar -->
+  <line x1="100" y1="550" x2="1100" y2="550" stroke="#1e293b" stroke-width="1" />
+  <text x="100" y="585" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="500" fill="#64748b">
+    https://eswar8328198233.github.io/JalaWatch/
+  </text>
+  <text x="1100" y="585" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="500" fill="#5eead4" text-anchor="end">
+    Andhra Pradesh Groundwater Awareness Initiative
+  </text>
+</svg>

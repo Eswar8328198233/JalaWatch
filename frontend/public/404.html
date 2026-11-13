@@ -1,14 +1,22 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8">
-    <title>JalaWatch</title>
+    <title>JalaWatch – Groundwater Pollution Reporting & Awareness Portal</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, follow">
     <script>
+      // Single Page Application redirect script for GitHub Pages
       sessionStorage.redirect = location.href;
+      var path = window.location.pathname;
+      var base = path.startsWith('/JalaWatch') ? '/JalaWatch/' : '/';
+      window.location.replace(base);
     </script>
-    <meta http-equiv="refresh" content="0;URL='/'">
+    <meta http-equiv="refresh" content="0;URL='/JalaWatch/'">
   </head>
-  <body>
-    <p>Redirecting to JalaWatch...</p>
+  <body style="font-family: system-ui, sans-serif; background: #f8fafc; color: #1e293b; padding: 2rem; text-align: center;">
+    <h2>Redirecting to JalaWatch Portal...</h2>
+    <p>Please wait while we navigate you to the requested page.</p>
+    <p><a href="/JalaWatch/" style="color: #0d9488; text-decoration: underline;">Click here if not redirected automatically</a></p>
   </body>
 </html>

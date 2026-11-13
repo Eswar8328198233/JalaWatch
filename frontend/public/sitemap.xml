@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <!-- Homepage: Groundwater Pollution Map & Nutakki Study Overview -->
+  <url>
+    <loc>https://eswar8328198233.github.io/JalaWatch/</loc>
+    <lastmod>2026-11-13</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <!-- Public Groundwater Reports & Laboratory Verification Database -->
+  <url>
+    <loc>https://eswar8328198233.github.io/JalaWatch/reports</loc>
+    <lastmod>2026-11-13</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <!-- Report Groundwater Concern / Contamination Observation -->
+  <url>
+    <loc>https://eswar8328198233.github.io/JalaWatch/report</loc>
+    <lastmod>2026-11-13</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <!-- Water Safety Guidelines, BIS IS 10500 Standards & Testing Directory -->
+  <url>
+    <loc>https://eswar8328198233.github.io/JalaWatch/safety</loc>
+    <lastmod>2026-11-13</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <!-- About JalaWatch, Nutakki Village CSP Study & Methodology -->
+  <url>
+    <loc>https://eswar8328198233.github.io/JalaWatch/about</loc>
+    <lastmod>2026-11-13</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+</urlset>

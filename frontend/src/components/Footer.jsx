@@ -1,7 +1,28 @@
 import React from 'react';
 import { Droplets, ShieldAlert, Phone, ExternalLink, Heart } from 'lucide-react';
 
+const BASE_PATH = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
+
+function getNavUrl(id) {
+  switch (id) {
+    case 'home': return `${BASE_PATH}/` || '/';
+    case 'reports': return `${BASE_PATH}/reports`;
+    case 'safety': return `${BASE_PATH}/safety`;
+    case 'about': return `${BASE_PATH}/about`;
+    case 'report': return `${BASE_PATH}/report`;
+    case 'admin-login': return `${BASE_PATH}/admin`;
+    case 'admin-dashboard': return `${BASE_PATH}/admin-dashboard`;
+    default: return `${BASE_PATH}/` || '/';
+  }
+}
+
 export default function Footer({ setActivePage }) {
+  const handleNav = (e, pageId) => {
+    e.preventDefault();
+    setActivePage(pageId);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   return (
     <footer className="bg-slate-900 text-slate-300 pt-16 pb-12 border-t border-slate-800 mt-auto">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -26,14 +47,18 @@ export default function Footer({ setActivePage }) {
           
           {/* Col 1: Brand & Project Background */}
           <div className="space-y-4">
-            <div className="flex items-center gap-2.5">
+            <a 
+              href={getNavUrl('home')}
+              onClick={(e) => handleNav(e, 'home')}
+              className="flex items-center gap-2.5 no-underline text-inherit"
+            >
               <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-500 to-teal-400 flex items-center justify-center text-white">
                 <Droplets className="w-5 h-5" />
               </div>
               <span className="text-xl font-bold tracking-tight text-white font-['Outfit']">
                 JalaWatch
               </span>
-            </div>
+            </a>
             <p className="text-xs text-slate-400 leading-relaxed">
               Inspired by field visits to Nutakki Village near Vijayawada, Andhra Pradesh. Empowering local communities to log water quality anomalies, study recharge risks, and bridge the gap with civic authorities.
             </p>
@@ -42,36 +67,65 @@ export default function Footer({ setActivePage }) {
             </div>
           </div>
 
-          {/* Col 2: Navigation */}
+          {/* Col 2: Navigation (Crawlable Anchor Links) */}
           <div>
             <h4 className="text-sm font-semibold text-white tracking-wider uppercase mb-4">
               Explore Portal
             </h4>
             <ul className="space-y-2.5 text-xs text-slate-400">
               <li>
-                <button onClick={() => { setActivePage('home'); window.scrollTo(0, 0); }} className="hover:text-brand-400 transition-colors">
+                <a 
+                  href={getNavUrl('home')} 
+                  onClick={(e) => handleNav(e, 'home')} 
+                  className="hover:text-brand-400 transition-colors no-underline text-inherit"
+                >
                   Home Overview
-                </button>
+                </a>
               </li>
               <li>
-                <button onClick={() => { setActivePage('report'); window.scrollTo(0, 0); }} className="hover:text-brand-400 transition-colors">
+                <a 
+                  href={getNavUrl('report')} 
+                  onClick={(e) => handleNav(e, 'report')} 
+                  className="hover:text-brand-400 transition-colors no-underline text-inherit"
+                >
                   Report Groundwater Concern
-                </button>
+                </a>
               </li>
               <li>
-                <button onClick={() => { setActivePage('reports'); window.scrollTo(0, 0); }} className="hover:text-brand-400 transition-colors">
+                <a 
+                  href={getNavUrl('reports')} 
+                  onClick={(e) => handleNav(e, 'reports')} 
+                  className="hover:text-brand-400 transition-colors no-underline text-inherit"
+                >
                   Community Reports Database
-                </button>
+                </a>
               </li>
               <li>
-                <button onClick={() => { setActivePage('safety'); window.scrollTo(0, 0); }} className="hover:text-brand-400 transition-colors">
+                <a 
+                  href={getNavUrl('safety')} 
+                  onClick={(e) => handleNav(e, 'safety')} 
+                  className="hover:text-brand-400 transition-colors no-underline text-inherit"
+                >
                   Water Testing & Safety Guide
-                </button>
+                </a>
               </li>
               <li>
-                <button onClick={() => { setActivePage('about'); window.scrollTo(0, 0); }} className="hover:text-brand-400 transition-colors">
+                <a 
+                  href={getNavUrl('about')} 
+                  onClick={(e) => handleNav(e, 'about')} 
+                  className="hover:text-brand-400 transition-colors no-underline text-inherit"
+                >
                   Nutakki Field Study & Team
-                </button>
+                </a>
+              </li>
+              <li>
+                <a 
+                  href={getNavUrl('admin-login')} 
+                  onClick={(e) => handleNav(e, 'admin-login')} 
+                  className="text-slate-500 hover:text-slate-400 transition-colors no-underline text-inherit"
+                >
+                  Admin Access Portal
+                </a>
               </li>
             </ul>
           </div>
