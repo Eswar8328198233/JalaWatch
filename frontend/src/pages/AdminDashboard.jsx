@@ -3,51 +3,97 @@ import {
   ShieldCheck, FileText, CheckCircle2, Clock, Trash2, Edit3, 
   Search, Download, ExternalLink, AlertTriangle, Eye, X, 
   MapPin, Calendar, User, Phone, Check, RefreshCw, AlertCircle,
-  BarChart3, ShieldAlert, Printer, FlaskConical, History, Filter
+  BarChart3, ShieldAlert, Printer, FlaskConical, History, Filter,
+  Layers, Users, Lock, ChevronRight, UserPlus, Sparkles, Navigation,
+  MessageSquare, Compass, Wind, Activity, ArrowUpDown
 } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import L from 'leaflet';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { 
   getAdminReports, 
   updateAdminReportStatus, 
   updateAdminLabTest,
+  updateAdminReportPriority,
+  assignAdminReport,
+  getAdminReportNotes,
+  addAdminReportNote,
   getAdminLogs,
   deleteAdminReport,
   getStats,
   getExportUrl,
-  getPhotoUrl
+  getPhotoUrl,
+  getHotspots,
+  getDuplicateClusters,
+  getAdminUsers,
+  createAdminUser,
+  updateAdminUserRole,
+  changeAdminPassword
 } from '../services/api';
 import AdminAnalyticsCharts from '../components/AdminAnalyticsCharts';
+
+// Custom Map Marker for Hotspots
+const hotspotIcon = (priority, status) => {
+  let color = '#0d9488'; // teal default
+  if (priority === 'Urgent' || status === 'Under Review') color = '#dc2626'; // red
+  else if (priority === 'High') color = '#ea580c'; // orange
+  else if (status === 'Resolved') color = '#10b981'; // emerald
+
+  return new L.DivIcon({
+    className: 'custom-admin-pin',
+    html: `<div style="background-color: ${color}; width: 26px; height: 26px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 2.5px solid white; box-shadow: 0 3px 10px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center;">
+            <div style="width: 8px; height: 8px; background: white; border-radius: 50%; transform: rotate(45deg);"></div>
+          </div>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 26],
+    popupAnchor: [0, -26],
+  });
+};
 
 export default function AdminDashboard({ setActivePage }) {
   const { token, admin, isAuthenticated, logout } = useAuth();
   const { addToast } = useToast();
 
-  const [activeTab, setActiveTab] = useState('table'); // 'table' | 'analytics' | 'logs'
+  const [activeTab, setActiveTab] = useState('table'); // 'table' | 'analytics' | 'operations' | 'logs' | 'users'
   const [reports, setReports] = useState([]);
   const [stats, setStats] = useState(null);
   const [logs, setLogs] = useState([]);
+  const [hotspots, setHotspots] = useState([]);
+  const [duplicateClusters, setDuplicateClusters] = useState([]);
+  const [usersList, setUsersList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  // Filters
+  // Filters & Sorting
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [categoryFilter, setCategoryFilter] = useState('All');
+  const [villageFilter, setVillageFilter] = useState('All');
+  const [priorityFilter, setPriorityFilter] = useState('All');
+  const [assignedFilter, setAssignedFilter] = useState('All');
+  const [sortBy, setSortBy] = useState('date_desc');
 
   // Modals
-  const [selectedReport, setSelectedReport] = useState(null);
+  const [inspectReport, setInspectReport] = useState(null);
   const [editingReport, setEditingReport] = useState(null);
   const [labTestingReport, setLabTestingReport] = useState(null);
   const [deletingReport, setDeletingReport] = useState(null);
-  const [actionLoading, setActionLoading] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
 
-  // Edit form states
+  // Follow-up notes in inspect modal
+  const [reportNotes, setReportNotes] = useState([]);
+  const [newNoteText, setNewNoteText] = useState('');
+  const [notesLoading, setNotesLoading] = useState(false);
+
+  // Edit status form
   const [editStatus, setEditStatus] = useState('');
   const [editNotes, setEditNotes] = useState('');
   const [editVerified, setEditVerified] = useState(false);
 
-  // Lab test form states
+  // Lab test form
   const [labForm, setLabForm] = useState({
     ph: '',
     tds: '',
@@ -55,10 +101,32 @@ export default function AdminDashboard({ setActivePage }) {
     nitrate: '',
     e_coli: 'Absent',
     lab_name: 'RWS&S District Water Testing Laboratory, Guntur',
+    report_reference_no: '',
+    sample_collection_date: new Date().toISOString().slice(0, 10),
     testing_date: new Date().toISOString().slice(0, 10),
+    lab_certificate_url: '',
     lab_notes: '',
-    lab_status: 'Tested'
+    lab_status: 'Tested & Certified',
+    is_verified: true
   });
+
+  // Change password form
+  const [passwordForm, setPasswordForm] = useState({
+    current_password: '',
+    new_password: '',
+    confirm_password: ''
+  });
+
+  // Create user form
+  const [createUserForm, setCreateUserForm] = useState({
+    username: '',
+    email: '',
+    password: '',
+    role: 'field_officer'
+  });
+
+  const isSuperAdmin = admin?.role === 'super_admin';
+  const isOfficer = admin?.role === 'field_officer';
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -66,7 +134,7 @@ export default function AdminDashboard({ setActivePage }) {
       return;
     }
     loadDashboardData();
-  }, [isAuthenticated, statusFilter, categoryFilter]);
+  }, [isAuthenticated, statusFilter, categoryFilter, villageFilter, priorityFilter, assignedFilter, sortBy]);
 
   const loadDashboardData = async () => {
     setLoading(true);
@@ -76,6 +144,10 @@ export default function AdminDashboard({ setActivePage }) {
           search,
           status: statusFilter,
           category: categoryFilter,
+          village: villageFilter,
+          priority: priorityFilter,
+          assigned_to: assignedFilter,
+          sort_by: sortBy
         }),
         getStats(),
       ]);
@@ -102,16 +174,95 @@ export default function AdminDashboard({ setActivePage }) {
     }
   };
 
+  const loadHotspotsAndOperations = async () => {
+    try {
+      const [hotspotData, dupData] = await Promise.all([
+        getHotspots(),
+        getDuplicateClusters(token)
+      ]);
+      setHotspots(hotspotData.hotspots || []);
+      setDuplicateClusters(dupData.clusters || []);
+    } catch (err) {
+      console.error('Operations load error:', err);
+    }
+  };
+
+  const loadUsersList = async () => {
+    try {
+      const data = await getAdminUsers(token);
+      setUsersList(data.users || []);
+    } catch (err) {
+      console.error('Users load error:', err);
+      addToast('Failed to load system users', 'error');
+    }
+  };
+
   const handleTabChange = (tab) => {
     setActiveTab(tab);
-    if (tab === 'logs') {
-      loadAuditLogs();
-    }
+    if (tab === 'logs') loadAuditLogs();
+    if (tab === 'operations' || tab === 'analytics') loadHotspotsAndOperations();
+    if (tab === 'users') loadUsersList();
   };
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     loadDashboardData();
+  };
+
+  const handleOpenInspect = async (report) => {
+    setInspectReport(report);
+    setNewNoteText('');
+    setNotesLoading(true);
+    try {
+      const data = await getAdminReportNotes(token, report.id);
+      setReportNotes(data.notes || []);
+    } catch (err) {
+      console.warn('Could not load follow-up notes:', err);
+      setReportNotes([]);
+    } finally {
+      setNotesLoading(false);
+    }
+  };
+
+  const handleAddNote = async (e) => {
+    e.preventDefault();
+    if (!newNoteText.trim() || !inspectReport) return;
+
+    try {
+      await addAdminReportNote(token, inspectReport.id, newNoteText.trim());
+      addToast('Follow-up inspection note recorded.', 'success');
+      setNewNoteText('');
+      const data = await getAdminReportNotes(token, inspectReport.id);
+      setReportNotes(data.notes || []);
+    } catch (err) {
+      addToast(err.message || 'Failed to add follow-up note', 'error');
+    }
+  };
+
+  const handleUpdatePriority = async (reportId, priority) => {
+    try {
+      await updateAdminReportPriority(token, reportId, priority);
+      addToast(`Priority updated to ${priority}.`, 'success');
+      if (inspectReport && inspectReport.id === reportId) {
+        setInspectReport(prev => ({ ...prev, priority }));
+      }
+      loadDashboardData();
+    } catch (err) {
+      addToast(err.message || 'Failed to update priority', 'error');
+    }
+  };
+
+  const handleAssignOfficer = async (reportId, officer) => {
+    try {
+      await assignAdminReport(token, reportId, officer);
+      addToast(`Report assigned to ${officer || 'Unassigned'}.`, 'success');
+      if (inspectReport && inspectReport.id === reportId) {
+        setInspectReport(prev => ({ ...prev, assigned_to: officer }));
+      }
+      loadDashboardData();
+    } catch (err) {
+      addToast(err.message || 'Failed to assign officer', 'error');
+    }
   };
 
   const handleOpenEdit = (report) => {
@@ -130,9 +281,13 @@ export default function AdminDashboard({ setActivePage }) {
       nitrate: report.nitrate != null ? report.nitrate : '15',
       e_coli: report.e_coli || 'Absent',
       lab_name: report.lab_name || 'RWS&S District Water Testing Laboratory, Guntur',
+      report_reference_no: report.report_reference_no || `RWS-GNT-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      sample_collection_date: report.sample_collection_date || report.date_observed || new Date().toISOString().slice(0, 10),
       testing_date: report.testing_date || new Date().toISOString().slice(0, 10),
+      lab_certificate_url: report.lab_certificate_url || '',
       lab_notes: report.lab_notes || 'Tested compliant with BIS IS 10500 standards.',
-      lab_status: report.lab_status || 'Tested'
+      lab_status: report.lab_status || 'Tested & Certified',
+      is_verified: true
     });
   };
 
@@ -171,11 +326,15 @@ export default function AdminDashboard({ setActivePage }) {
         nitrate: labForm.nitrate ? parseFloat(labForm.nitrate) : null,
         e_coli: labForm.e_coli,
         lab_name: labForm.lab_name,
+        report_reference_no: labForm.report_reference_no,
+        sample_collection_date: labForm.sample_collection_date,
         testing_date: labForm.testing_date,
+        lab_certificate_url: labForm.lab_certificate_url,
         lab_notes: labForm.lab_notes,
         lab_status: labForm.lab_status,
+        is_verified: labForm.is_verified
       });
-      addToast(`Laboratory test results recorded for ${labTestingReport.id}.`, 'success');
+      addToast(`Laboratory verification recorded for ${labTestingReport.id}.`, 'success');
       setLabTestingReport(null);
       loadDashboardData();
     } catch (err) {
@@ -203,6 +362,56 @@ export default function AdminDashboard({ setActivePage }) {
     }
   };
 
+  const handleChangePasswordSubmit = async (e) => {
+    e.preventDefault();
+    if (passwordForm.new_password !== passwordForm.confirm_password) {
+      addToast('New passwords do not match.', 'error');
+      return;
+    }
+    if (passwordForm.new_password.length < 8) {
+      addToast('New password must be at least 8 characters.', 'error');
+      return;
+    }
+
+    setActionLoading(true);
+    try {
+      await changeAdminPassword(token, passwordForm.current_password, passwordForm.new_password);
+      addToast('Password changed successfully!', 'success');
+      setShowPasswordModal(false);
+      setPasswordForm({ current_password: '', new_password: '', confirm_password: '' });
+    } catch (err) {
+      addToast(err.message || 'Failed to change password.', 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCreateUserSubmit = async (e) => {
+    e.preventDefault();
+    setActionLoading(true);
+    try {
+      await createAdminUser(token, createUserForm);
+      addToast(`User ${createUserForm.username} created successfully!`, 'success');
+      setShowCreateUserModal(false);
+      setCreateUserForm({ username: '', email: '', password: '', role: 'field_officer' });
+      loadUsersList();
+    } catch (err) {
+      addToast(err.message || 'Failed to create user.', 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRoleChange = async (userId, newRole) => {
+    try {
+      await updateAdminUserRole(token, userId, newRole);
+      addToast('User role updated successfully.', 'success');
+      loadUsersList();
+    } catch (err) {
+      addToast(err.message || 'Failed to change user role.', 'error');
+    }
+  };
+
   const handleExportCSV = () => {
     const exportUrl = getExportUrl(token);
     const link = document.createElement('a');
@@ -211,11 +420,24 @@ export default function AdminDashboard({ setActivePage }) {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    addToast('Downloading official reports CSV...', 'info');
+    addToast('Downloading official comprehensive reports CSV...', 'info');
   };
 
   const handlePrintSummary = () => {
     window.print();
+  };
+
+  const getPriorityBadge = (priority) => {
+    switch (priority) {
+      case 'Urgent':
+        return <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200 text-[10px] font-bold">Urgent</span>;
+      case 'High':
+        return <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-bold">High</span>;
+      case 'Low':
+        return <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">Low</span>;
+      default:
+        return <span className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 border border-teal-200 text-[10px] font-bold">Medium</span>;
+    }
   };
 
   if (!isAuthenticated) return null;
@@ -223,40 +445,51 @@ export default function AdminDashboard({ setActivePage }) {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
       
-      {/* Top Banner & Header */}
+      {/* Top Banner & Control Center Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-900 text-white p-6 sm:p-8 rounded-3xl shadow-lg border border-slate-800 print:hidden">
         <div className="space-y-1">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-500/20 border border-teal-500/30 text-teal-300 text-xs font-semibold">
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Admin Control Center</span>
+            <span>JalaWatch Portal Command Center</span>
+            <span className="uppercase text-[10px] font-bold bg-teal-400 text-slate-950 px-1.5 py-0.2 rounded">
+              {admin?.role || 'Admin'}
+            </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold font-['Outfit']">
-            Groundwater Submissions Management
+            Groundwater Submissions & Field Intelligence
           </h1>
           <p className="text-xs text-slate-400">
-            Logged in as <strong className="text-white">{admin?.username}</strong> ({admin?.email})
+            Authenticated as <strong className="text-white">{admin?.username}</strong> ({admin?.email})
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setShowPasswordModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors"
+            title="Change Account Password"
+          >
+            <Lock className="w-3.5 h-3.5 text-slate-400" />
+            <span>Password</span>
+          </button>
           <button
             onClick={handlePrintSummary}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors"
             title="Print Summary"
           >
-            <Printer className="w-4 h-4" />
-            <span>Print Summary</span>
+            <Printer className="w-3.5 h-3.5" />
+            <span>Print</span>
           </button>
           <button
             onClick={handleExportCSV}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-md transition-colors"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-md transition-colors"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-3.5 h-3.5" />
             <span>Export CSV</span>
           </button>
           <button
             onClick={() => { logout(); setActivePage('home'); }}
-            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-300 hover:text-white text-xs font-semibold border border-slate-700 transition-colors"
+            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-300 hover:text-white text-xs font-semibold border border-slate-700 transition-colors"
           >
             Log Out
           </button>
@@ -264,13 +497,11 @@ export default function AdminDashboard({ setActivePage }) {
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-3 print:hidden">
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-3 overflow-x-auto print:hidden">
         <button
           onClick={() => handleTabChange('table')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'table'
-              ? 'bg-teal-700 text-white shadow-sm'
-              : 'text-slate-600 hover:bg-slate-100'
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+            activeTab === 'table' ? 'bg-teal-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <FileText className="w-4 h-4" />
@@ -279,655 +510,1163 @@ export default function AdminDashboard({ setActivePage }) {
 
         <button
           onClick={() => handleTabChange('analytics')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'analytics'
-              ? 'bg-teal-700 text-white shadow-sm'
-              : 'text-slate-600 hover:bg-slate-100'
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+            activeTab === 'analytics' ? 'bg-teal-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <BarChart3 className="w-4 h-4" />
-          <span>Advanced Analytics</span>
+          <span>Analytics & Hotspot Map</span>
+        </button>
+
+        <button
+          onClick={() => handleTabChange('operations')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+            activeTab === 'operations' ? 'bg-teal-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Compass className="w-4 h-4" />
+          <span>Field Operations & Duplicates</span>
         </button>
 
         <button
           onClick={() => handleTabChange('logs')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'logs'
-              ? 'bg-teal-700 text-white shadow-sm'
-              : 'text-slate-600 hover:bg-slate-100'
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+            activeTab === 'logs' ? 'bg-teal-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <History className="w-4 h-4" />
-          <span>Security & Activity Logs</span>
+          <span>Audit Trail</span>
         </button>
+
+        {isSuperAdmin && (
+          <button
+            onClick={() => handleTabChange('users')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+              activeTab === 'users' ? 'bg-teal-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            <span>Admin & RBAC Users</span>
+          </button>
+        )}
       </div>
 
-      {/* TAB 1: SUBMISSIONS TABLE */}
+      {/* TAB 1: SUBMISSIONS TABLE & FILTERS */}
       {activeTab === 'table' && (
         <div className="space-y-6">
-          {/* KPI Stats Ribbon */}
+          {/* Quick Metrics Ribbon */}
           {stats && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <span className="text-xs text-slate-400 font-medium">Total Submissions</span>
-                <span className="text-2xl font-black text-slate-900 block font-['Outfit'] mt-1">
-                  {stats.total_reports}
-                </span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+              <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+                <span className="text-[10px] text-slate-400 font-semibold uppercase">Total Reports</span>
+                <span className="text-xl font-black text-slate-900 block font-['Outfit']">{stats.total_reports}</span>
               </div>
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <span className="text-xs text-slate-400 font-medium">Pending Review</span>
-                <span className="text-2xl font-black text-teal-600 block font-['Outfit'] mt-1">
-                  {stats.submitted}
-                </span>
+              <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+                <span className="text-[10px] text-slate-400 font-semibold uppercase">Pending</span>
+                <span className="text-xl font-black text-amber-600 block font-['Outfit']">{stats.submitted}</span>
               </div>
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <span className="text-xs text-slate-400 font-medium">Under Investigation</span>
-                <span className="text-2xl font-black text-amber-600 block font-['Outfit'] mt-1">
-                  {stats.under_review}
-                </span>
+              <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+                <span className="text-[10px] text-slate-400 font-semibold uppercase">Under Review</span>
+                <span className="text-xl font-black text-teal-600 block font-['Outfit']">{stats.under_review}</span>
               </div>
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <span className="text-xs text-slate-400 font-medium">Resolved / Addressed</span>
-                <span className="text-2xl font-black text-emerald-600 block font-['Outfit'] mt-1">
-                  {stats.resolved}
-                </span>
+              <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+                <span className="text-[10px] text-slate-400 font-semibold uppercase">Resolved</span>
+                <span className="text-xl font-black text-emerald-600 block font-['Outfit']">{stats.resolved}</span>
+              </div>
+              <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+                <span className="text-[10px] text-slate-400 font-semibold uppercase">Lab Verified</span>
+                <span className="text-xl font-black text-teal-800 block font-['Outfit']">{stats.verified_reports || 0}</span>
+              </div>
+              <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+                <span className="text-[10px] text-slate-400 font-semibold uppercase">Resolution Rate</span>
+                <span className="text-xl font-black text-slate-900 block font-['Outfit']">{stats.resolution_rate}%</span>
               </div>
             </div>
           )}
 
-          {/* Management Toolbar */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 text-xs print:hidden">
-            <form onSubmit={handleSearchSubmit} className="w-full sm:w-72 relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
-              <input
-                type="text"
-                placeholder="Search report ID, village, notes..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
-              />
+          {/* Advanced Search & Filtering Bar */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+            <form onSubmit={handleSearchSubmit} className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search by Report ID, village, reporter name, landmark, description..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-200 text-xs focus:ring-1 focus:ring-teal-500 focus:outline-none"
+                />
+              </div>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors shrink-0"
+              >
+                Search Submissions
+              </button>
             </form>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-2 rounded-xl border border-slate-200 focus:outline-none bg-white"
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-xs pt-1 border-t border-slate-100">
+              {/* Status Filter */}
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 mb-0.5">Status</label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs bg-slate-50 focus:bg-white"
+                >
+                  <option value="All">All Statuses</option>
+                  <option value="Submitted">Submitted</option>
+                  <option value="Under Review">Under Review</option>
+                  <option value="Resolved">Resolved</option>
+                  <option value="Archived">Archived</option>
+                </select>
+              </div>
+
+              {/* Category Filter */}
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 mb-0.5">Category</label>
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs bg-slate-50 focus:bg-white"
+                >
+                  <option value="All">All Categories</option>
+                  <option value="Unusual water colour">Unusual water colour</option>
+                  <option value="Bad smell or taste">Bad smell or taste</option>
+                  <option value="Suspected waste dumping">Suspected waste dumping</option>
+                  <option value="Drainage problems">Drainage problems</option>
+                  <option value="Leaking pipes">Leaking pipes</option>
+                  <option value="Agricultural runoff">Agricultural runoff</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              {/* Village Filter */}
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 mb-0.5">Locality</label>
+                <select
+                  value={villageFilter}
+                  onChange={(e) => setVillageFilter(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs bg-slate-50 focus:bg-white"
+                >
+                  <option value="All">All Localities</option>
+                  <option value="Nutakki">Nutakki</option>
+                  <option value="Tadepalli Rural">Tadepalli Rural</option>
+                  <option value="Mangalagiri Rural">Mangalagiri Rural</option>
+                  <option value="Kunchanapalli">Kunchanapalli</option>
+                  <option value="Kolanukonda">Kolanukonda</option>
+                  <option value="Vijayawada Rural">Vijayawada Rural</option>
+                </select>
+              </div>
+
+              {/* Priority Filter */}
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 mb-0.5">Priority</label>
+                <select
+                  value={priorityFilter}
+                  onChange={(e) => setPriorityFilter(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs bg-slate-50 focus:bg-white"
+                >
+                  <option value="All">All Priorities</option>
+                  <option value="Urgent">Urgent</option>
+                  <option value="High">High</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Low">Low</option>
+                </select>
+              </div>
+
+              {/* Assigned To Filter */}
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 mb-0.5">Assigned Officer</label>
+                <select
+                  value={assignedFilter}
+                  onChange={(e) => setAssignedFilter(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs bg-slate-50 focus:bg-white"
+                >
+                  <option value="All">All Assigned</option>
+                  <option value="Unassigned">Unassigned Only</option>
+                </select>
+              </div>
+
+              {/* Sort By */}
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 mb-0.5">Sort Order</label>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs bg-slate-50 focus:bg-white"
+                >
+                  <option value="date_desc">Newest First</option>
+                  <option value="date_asc">Oldest First</option>
+                  <option value="priority">Priority Order</option>
+                  <option value="status">Status Order</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider text-[10px] border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4">Report ID</th>
+                    <th className="py-3 px-4">Location</th>
+                    <th className="py-3 px-4">Issue Category</th>
+                    <th className="py-3 px-4">Priority</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">Lab Verified</th>
+                    <th className="py-3 px-4">Assigned To</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {loading ? (
+                    <tr>
+                      <td colSpan="8" className="py-12 text-center text-slate-400">
+                        <div className="w-5 h-5 border-2 border-teal-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                        Loading community reports...
+                      </td>
+                    </tr>
+                  ) : reports.length === 0 ? (
+                    <tr>
+                      <td colSpan="8" className="py-12 text-center text-slate-400">
+                        No reports matching current search and filter criteria.
+                      </td>
+                    </tr>
+                  ) : (
+                    reports.map((r) => (
+                      <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-3 px-4 font-mono font-bold text-teal-800 whitespace-nowrap">
+                          {r.id}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="font-semibold text-slate-900 block">{r.village}</span>
+                          <span className="text-[11px] text-slate-400 truncate block max-w-[180px]">
+                            {r.landmark || r.district || 'Coordinates pinned'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-slate-700">
+                          {r.category}
+                        </td>
+                        <td className="py-3 px-4">
+                          {getPriorityBadge(r.priority || 'Medium')}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            r.status === 'Resolved' ? 'bg-emerald-100 text-emerald-800' :
+                            r.status === 'Under Review' ? 'bg-amber-100 text-amber-800' :
+                            r.status === 'Archived' ? 'bg-slate-200 text-slate-700' :
+                            'bg-teal-100 text-teal-800'
+                          }`}>
+                            {r.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          {r.is_verified ? (
+                            <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold text-[11px]">
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Certified
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-[11px]">Pending Lab</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-slate-600 text-[11px]">
+                          {r.assigned_to ? (
+                            <span className="font-medium text-slate-800">{r.assigned_to}</span>
+                          ) : (
+                            <span className="text-slate-400 italic">Unassigned</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right whitespace-nowrap space-x-1">
+                          <button
+                            onClick={() => handleOpenInspect(r)}
+                            className="p-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 transition-colors inline-block"
+                            title="Inspect Full Report & Observations"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleOpenEdit(r)}
+                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors inline-block"
+                            title="Update Status & Remarks"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleOpenLabTest(r)}
+                            className="p-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-700 transition-colors inline-block"
+                            title="Certified Lab Verification"
+                          >
+                            <FlaskConical className="w-3.5 h-3.5" />
+                          </button>
+                          {!isOfficer && (
+                            <button
+                              onClick={() => setDeletingReport(r)}
+                              className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 transition-colors inline-block"
+                              title="Delete Report"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: ADVANCED ANALYTICS & HOTSPOTS MAP */}
+      {activeTab === 'analytics' && (
+        <div className="space-y-6">
+          {/* Main Analytics Charts */}
+          <AdminAnalyticsCharts stats={stats} />
+
+          {/* Interactive Geographic Hotspots Map */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-soft space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-teal-600" />
+                <h3 className="font-bold text-slate-900 text-sm font-['Outfit']">
+                  Geographic Pollution Hotspots & Surveillance Map
+                </h3>
+              </div>
+              <div className="flex items-center gap-2 text-[11px]">
+                <span className="flex items-center gap-1 font-semibold text-rose-700">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-600 inline-block" /> Urgent / Under Review
+                </span>
+                <span className="flex items-center gap-1 font-semibold text-teal-700 ml-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-teal-600 inline-block" /> Active Observation
+                </span>
+                <span className="flex items-center gap-1 font-semibold text-emerald-700 ml-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block" /> Resolved
+                </span>
+              </div>
+            </div>
+
+            <div className="h-96 w-full rounded-2xl overflow-hidden border border-slate-200 shadow-inner">
+              <MapContainer
+                center={[16.4382, 80.6010]}
+                zoom={14}
+                scrollWheelZoom={false}
+                className="h-full w-full"
               >
-                <option value="All">All Statuses</option>
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                {hotspots.map((h) => (
+                  <Marker
+                    key={h.id}
+                    position={[Number(h.latitude), Number(h.longitude)]}
+                    icon={hotspotIcon(h.priority, h.status)}
+                  >
+                    <Popup>
+                      <div className="text-xs p-1 space-y-1">
+                        <strong className="text-teal-900">{h.id} • {h.village}</strong>
+                        <p className="text-[11px] text-slate-600">{h.category}</p>
+                        <div className="flex items-center gap-1">
+                          {getPriorityBadge(h.priority)}
+                          <span className="text-[10px] text-slate-500">{h.status}</span>
+                        </div>
+                      </div>
+                    </Popup>
+                  </Marker>
+                ))}
+              </MapContainer>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: FIELD OPERATIONS & DUPLICATE WARNINGS */}
+      {activeTab === 'operations' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-soft space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-500" />
+                <h3 className="font-bold text-slate-900 text-sm font-['Outfit']">
+                  Potential Duplicate Clusters (Within ~150 meters)
+                </h3>
+              </div>
+              <span className="text-[11px] font-bold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                {duplicateClusters.length} Hotspot Cluster(s) Identified
+              </span>
+            </div>
+
+            {duplicateClusters.length === 0 ? (
+              <p className="text-xs text-slate-400 py-8 text-center">
+                No duplicate or clustered reports detected within proximity bounds.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {duplicateClusters.map((cluster, idx) => (
+                  <div key={idx} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-teal-600" />
+                        Cluster at {cluster.village} ({cluster.reports_count} reports within 150m)
+                      </span>
+                      <span className="text-[11px] font-mono text-slate-500">
+                        {cluster.center_lat.toFixed(4)}° N, {cluster.center_lng.toFixed(4)}° E
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {cluster.reports.map((cr) => (
+                        <div key={cr.id} className="p-3 bg-white rounded-xl border border-slate-200 text-xs space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono font-bold text-teal-800">{cr.id}</span>
+                            <span className="text-[10px] text-slate-400">{cr.date_observed}</span>
+                          </div>
+                          <p className="text-slate-700 font-medium truncate">{cr.category}</p>
+                          <p className="text-[11px] text-slate-500 truncate">{cr.landmark || 'No landmark specified'}</p>
+                          <div className="pt-1 flex items-center justify-between">
+                            <span className="text-[10px] text-teal-700 font-semibold">{cr.status}</span>
+                            <button
+                              onClick={() => {
+                                const fullReport = reports.find(r => r.id === cr.id);
+                                if (fullReport) handleOpenInspect(fullReport);
+                              }}
+                              className="text-[10px] text-teal-600 hover:text-teal-800 underline font-semibold"
+                            >
+                              Inspect
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: AUDIT TRAIL */}
+      {activeTab === 'logs' && (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-soft space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <History className="w-4 h-4 text-teal-600" />
+              <h3 className="font-bold text-slate-900 text-sm font-['Outfit']">
+                Administrative Security & Audit Logs
+              </h3>
+            </div>
+            <button
+              onClick={loadAuditLogs}
+              disabled={logsLoading}
+              className="flex items-center gap-1 text-xs text-teal-700 hover:text-teal-900 font-semibold"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${logsLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh Logs</span>
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider text-[10px] border-b border-slate-200">
+                <tr>
+                  <th className="py-2.5 px-3">Timestamp (UTC)</th>
+                  <th className="py-2.5 px-3">Admin</th>
+                  <th className="py-2.5 px-3">Action</th>
+                  <th className="py-2.5 px-3">Report ID</th>
+                  <th className="py-2.5 px-3">Details</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
+                {logsLoading ? (
+                  <tr>
+                    <td colSpan="5" className="py-8 text-center text-slate-400 font-sans">
+                      Loading audit logs...
+                    </td>
+                  </tr>
+                ) : logs.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" className="py-8 text-center text-slate-400 font-sans">
+                      No security audit records logged yet.
+                    </td>
+                  </tr>
+                ) : (
+                  logs.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-50">
+                      <td className="py-2.5 px-3 text-slate-500 whitespace-nowrap">
+                        {log.timestamp.slice(0, 19).replace('T', ' ')}
+                      </td>
+                      <td className="py-2.5 px-3 font-sans font-semibold text-slate-800">
+                        {log.username}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-800 text-[10px] font-bold border border-teal-200 font-sans">
+                          {log.action}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-teal-700">
+                        {log.report_id || '-'}
+                      </td>
+                      <td className="py-2.5 px-3 font-sans text-slate-600 max-w-md truncate" title={log.details}>
+                        {log.details || '-'}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: RBAC USERS MANAGEMENT (SUPER ADMIN) */}
+      {activeTab === 'users' && isSuperAdmin && (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-soft space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-teal-600" />
+              <h3 className="font-bold text-slate-900 text-sm font-['Outfit']">
+                Authorized Administrative Users & Field Officers
+              </h3>
+            </div>
+            <button
+              onClick={() => setShowCreateUserModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Create User / Officer</span>
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider text-[10px] border-b border-slate-200">
+                <tr>
+                  <th className="py-2.5 px-3">ID</th>
+                  <th className="py-2.5 px-3">Username</th>
+                  <th className="py-2.5 px-3">Email</th>
+                  <th className="py-2.5 px-3">Role</th>
+                  <th className="py-2.5 px-3">Last Login</th>
+                  <th className="py-2.5 px-3 text-right">Role Controls</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs">
+                {usersList.map((u) => (
+                  <tr key={u.id} className="hover:bg-slate-50">
+                    <td className="py-2.5 px-3 font-mono text-slate-400">{u.id}</td>
+                    <td className="py-2.5 px-3 font-bold text-slate-900">{u.username}</td>
+                    <td className="py-2.5 px-3 text-slate-600">{u.email}</td>
+                    <td className="py-2.5 px-3">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        u.role === 'super_admin' ? 'bg-purple-100 text-purple-900' :
+                        u.role === 'admin' ? 'bg-teal-100 text-teal-900' :
+                        'bg-blue-100 text-blue-900'
+                      }`}>
+                        {u.role}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-500 text-[11px]">
+                      {u.last_login ? u.last_login.slice(0, 16).replace('T', ' ') : 'Never'}
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      {u.id !== Number(admin?.id) && (
+                        <select
+                          value={u.role}
+                          onChange={(e) => handleRoleChange(u.id, e.target.value)}
+                          className="px-2 py-1 rounded-lg border border-slate-200 text-xs bg-slate-50"
+                        >
+                          <option value="super_admin">Super Admin</option>
+                          <option value="admin">Admin</option>
+                          <option value="field_officer">Field Officer</option>
+                        </select>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 1: FULL REPORT INSPECTION & OBSERVATIONS */}
+      {inspectReport && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-3xl w-full p-6 sm:p-8 space-y-6 max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-lg font-black text-teal-800">{inspectReport.id}</span>
+                {getPriorityBadge(inspectReport.priority)}
+                <span className="text-xs text-slate-500">({inspectReport.status})</span>
+              </div>
+              <button
+                onClick={() => setInspectReport(null)}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Location & Coordinates Section */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+              <div className="space-y-1 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Geographic Location</span>
+                <p className="font-bold text-slate-900 text-sm">{inspectReport.village}</p>
+                <p className="text-slate-600">{inspectReport.landmark || 'No landmark specified'}</p>
+                <p className="text-slate-400 text-[11px] font-mono">
+                  {inspectReport.latitude && inspectReport.longitude 
+                    ? `📍 ${Number(inspectReport.latitude).toFixed(6)}° N, ${Number(inspectReport.longitude).toFixed(6)}° E`
+                    : 'Coordinates not logged'}
+                </p>
+              </div>
+
+              <div className="space-y-1 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Investigation Assignment</span>
+                <div className="flex items-center gap-2 pt-1">
+                  <select
+                    value={inspectReport.assigned_to || ''}
+                    onChange={(e) => handleAssignOfficer(inspectReport.id, e.target.value)}
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-semibold bg-white flex-1"
+                  >
+                    <option value="">Unassigned</option>
+                    <option value="Field Officer Rao">Field Officer Rao</option>
+                    <option value="Inspector Lakshmi">Inspector Lakshmi</option>
+                    <option value="CSP Nutakki Team">CSP Nutakki Team</option>
+                    <option value="RWS&S Assistant Engineer">RWS&S Assistant Engineer</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2 pt-2">
+                  <span className="text-[10px] text-slate-500 font-medium">Priority:</span>
+                  <select
+                    value={inspectReport.priority || 'Medium'}
+                    onChange={(e) => handleUpdatePriority(inspectReport.id, e.target.value)}
+                    className="px-2 py-1 rounded-md border border-slate-300 text-xs font-semibold bg-white"
+                  >
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                    <option value="Urgent">Urgent</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Field Survey Observations Breakdown */}
+            <div className="p-4 bg-teal-50/50 rounded-2xl border border-teal-100 text-xs space-y-2">
+              <span className="text-[10px] font-bold text-teal-800 uppercase tracking-wider block">
+                Citizen & Environmental Field Observations
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div>
+                  <span className="text-[10px] text-slate-400 block">Water Appearance</span>
+                  <strong className="text-slate-800">{inspectReport.water_appearance || 'Not specified'}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block">Water Odor</span>
+                  <strong className="text-slate-800">{inspectReport.water_smell || 'None'}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block">Water Usage</span>
+                  <strong className="text-slate-800">{inspectReport.water_usage || 'Drinking'}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block">Duration of Issue</span>
+                  <strong className="text-slate-800">{inspectReport.issue_duration || 'Not specified'}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block">Nearby Wastewater Source</span>
+                  <strong className="text-slate-800">{inspectReport.nearby_wastewater || 'None specified'}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block">Distance to Wastewater</span>
+                  <strong className="text-slate-800">{inspectReport.suspected_distance || 'Unknown'}</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Description & Photo */}
+            <div className="space-y-2 text-xs">
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">Detailed Description</span>
+              <p className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-slate-700 leading-relaxed">
+                {inspectReport.description}
+              </p>
+            </div>
+
+            {inspectReport.photo_url && (
+              <div className="space-y-2 text-xs">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Attached Evidence Photo</span>
+                <div className="max-w-xs rounded-xl overflow-hidden border border-slate-200">
+                  <img
+                    src={getPhotoUrl(inspectReport.photo_url)}
+                    alt="Proof evidence"
+                    className="w-full h-40 object-cover cursor-pointer hover:scale-102 transition-transform"
+                    onClick={() => window.open(getPhotoUrl(inspectReport.photo_url), '_blank')}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Certified Lab Verification Metrics (if recorded) */}
+            {inspectReport.is_verified && (
+              <div className="p-4 bg-emerald-50/60 rounded-2xl border border-emerald-200 text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Certified Laboratory Results
+                  </span>
+                  <span className="text-[10px] font-mono text-emerald-800">{inspectReport.report_reference_no || 'Ref Certified'}</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="bg-white p-2 rounded-lg border border-emerald-200">
+                    <span className="text-[10px] text-slate-400 block">pH Level</span>
+                    <strong className="text-slate-900 text-sm">{inspectReport.ph ?? 'N/A'}</strong>
+                  </div>
+                  <div className="bg-white p-2 rounded-lg border border-emerald-200">
+                    <span className="text-[10px] text-slate-400 block">TDS (mg/L)</span>
+                    <strong className="text-slate-900 text-sm">{inspectReport.tds ?? 'N/A'}</strong>
+                  </div>
+                  <div className="bg-white p-2 rounded-lg border border-emerald-200">
+                    <span className="text-[10px] text-slate-400 block">Fluoride (mg/L)</span>
+                    <strong className="text-slate-900 text-sm">{inspectReport.fluoride ?? 'N/A'}</strong>
+                  </div>
+                  <div className="bg-white p-2 rounded-lg border border-emerald-200">
+                    <span className="text-[10px] text-slate-400 block">E. Coli</span>
+                    <strong className="text-slate-900 text-sm">{inspectReport.e_coli || 'Absent'}</strong>
+                  </div>
+                </div>
+                <p className="text-[11px] text-emerald-800 italic">{inspectReport.lab_name} ({inspectReport.testing_date})</p>
+              </div>
+            )}
+
+            {/* Internal Follow-up Notes Thread */}
+            <div className="space-y-3 pt-2 border-t border-slate-100 text-xs">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                <MessageSquare className="w-3.5 h-3.5 text-teal-600" />
+                Internal Field Notes Thread ({reportNotes.length})
+              </span>
+
+              <div className="space-y-2 max-h-36 overflow-y-auto">
+                {notesLoading ? (
+                  <p className="text-slate-400 italic">Loading notes...</p>
+                ) : reportNotes.length === 0 ? (
+                  <p className="text-slate-400 italic">No internal follow-up notes logged yet.</p>
+                ) : (
+                  reportNotes.map((n) => (
+                    <div key={n.id} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 space-y-0.5">
+                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+                        <strong className="text-slate-800">{n.officer_name}</strong>
+                        <span>{n.created_at ? n.created_at.slice(0, 16).replace('T', ' ') : ''}</span>
+                      </div>
+                      <p className="text-xs">{n.note}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Add Note Input */}
+              <form onSubmit={handleAddNote} className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Add internal follow-up note (e.g. Sample collected at 10 AM)..."
+                  value={newNoteText}
+                  onChange={(e) => setNewNoteText(e.target.value)}
+                  className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-1 focus:ring-teal-500 focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  className="px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-semibold text-xs transition-colors shrink-0"
+                >
+                  Post Note
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: UPDATE STATUS & REMARKS */}
+      {editingReport && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <form onSubmit={handleSaveStatus} className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="font-bold text-slate-900 text-sm font-['Outfit']">
+                Update Status: {editingReport.id}
+              </h3>
+              <button type="button" onClick={() => setEditingReport(null)}>
+                <X className="w-4 h-4 text-slate-400" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Investigation Status</label>
+              <select
+                value={editStatus}
+                onChange={(e) => setEditStatus(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-1 focus:ring-teal-500"
+              >
                 <option value="Submitted">Submitted</option>
                 <option value="Under Review">Under Review</option>
                 <option value="Resolved">Resolved</option>
                 <option value="Archived">Archived</option>
               </select>
-
-              <button
-                onClick={loadDashboardData}
-                className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
-                title="Refresh List"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
             </div>
-          </div>
 
-          {/* Reports Table */}
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-            {loading ? (
-              <div className="py-20 text-center space-y-2">
-                <div className="w-8 h-8 border-3 border-teal-600 border-t-transparent rounded-full animate-spin mx-auto" />
-                <p className="text-xs text-slate-500">Loading reports database...</p>
-              </div>
-            ) : reports.length === 0 ? (
-              <div className="py-16 text-center text-slate-500 text-xs">
-                No reports match the current criteria.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
-                    <tr>
-                      <th className="py-3 px-4">Report ID</th>
-                      <th className="py-3 px-4">Village & Source</th>
-                      <th className="py-3 px-4">Category</th>
-                      <th className="py-3 px-4">Date Observed</th>
-                      <th className="py-3 px-4">Status</th>
-                      <th className="py-3 px-4">Lab Verification</th>
-                      <th className="py-3 px-4">Admin Notes</th>
-                      <th className="py-3 px-4 text-right print:hidden">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {reports.map((r) => (
-                      <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
-                        
-                        {/* ID */}
-                        <td className="py-3.5 px-4 font-mono font-bold text-teal-800 whitespace-nowrap">
-                          {r.id}
-                          {r.is_demo && (
-                            <span className="ml-1.5 text-[9px] uppercase px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">
-                              Demo
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Village */}
-                        <td className="py-3.5 px-4">
-                          <span className="font-semibold text-slate-800 block">{r.village}</span>
-                          <span className="text-[11px] text-slate-400 block">{r.water_source || 'Groundwater'}</span>
-                        </td>
-
-                        {/* Category */}
-                        <td className="py-3.5 px-4 text-slate-700">
-                          {r.category}
-                        </td>
-
-                        {/* Date */}
-                        <td className="py-3.5 px-4 text-slate-500 whitespace-nowrap">
-                          {r.date_observed}
-                        </td>
-
-                        {/* Status */}
-                        <td className="py-3.5 px-4 whitespace-nowrap">
-                          <span
-                            className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                              r.status === 'Resolved'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : r.status === 'Under Review'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-teal-100 text-teal-800'
-                            }`}
-                          >
-                            {r.status}
-                          </span>
-                        </td>
-
-                        {/* Lab Verification */}
-                        <td className="py-3.5 px-4 whitespace-nowrap">
-                          {r.lab_status === 'Tested' || r.ph != null ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                              <FlaskConical className="w-3 h-3" />
-                              <span>pH {r.ph || '7.2'} • Verified</span>
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-slate-400">Not Tested</span>
-                          )}
-                        </td>
-
-                        {/* Admin Notes Preview */}
-                        <td className="py-3.5 px-4 max-w-xs text-slate-600 truncate">
-                          {r.admin_notes ? (
-                            <span className="text-slate-700 italic">{r.admin_notes}</span>
-                          ) : (
-                            <span className="text-slate-300 italic">None logged</span>
-                          )}
-                        </td>
-
-                        {/* Actions */}
-                        <td className="py-3.5 px-4 text-right whitespace-nowrap space-x-1 print:hidden">
-                          <button
-                            onClick={() => setSelectedReport(r)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-teal-700 hover:bg-teal-50 transition-colors"
-                            title="View Full Details"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleOpenLabTest(r)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 transition-colors"
-                            title="Record Laboratory Test"
-                          >
-                            <FlaskConical className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleOpenEdit(r)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition-colors"
-                            title="Edit Status & Notes"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => setDeletingReport(r)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                            title="Delete Report"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: ADVANCED ANALYTICS */}
-      {activeTab === 'analytics' && stats && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-slate-900 font-['Outfit']">
-              Groundwater Incident Analytics & Trends
-            </h2>
-            <button
-              onClick={loadDashboardData}
-              className="text-xs text-teal-700 font-bold flex items-center gap-1 hover:underline"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Refresh Metrics</span>
-            </button>
-          </div>
-          <AdminAnalyticsCharts stats={stats} />
-        </div>
-      )}
-
-      {/* TAB 3: AUDIT LOGS */}
-      {activeTab === 'logs' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-bold text-slate-900 font-['Outfit']">
-                Administrative Activity & Security Audit Trail
-              </h2>
-              <p className="text-xs text-slate-500">
-                All administrative status updates, laboratory tests, and deletions are immutably logged for civic governance accountability.
-              </p>
-            </div>
-            <button
-              onClick={loadAuditLogs}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 text-xs text-slate-700 hover:bg-slate-50"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Refresh Logs</span>
-            </button>
-          </div>
-
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-            {logsLoading ? (
-              <div className="py-20 text-center space-y-2">
-                <div className="w-8 h-8 border-3 border-teal-600 border-t-transparent rounded-full animate-spin mx-auto" />
-                <p className="text-xs text-slate-500">Retrieving audit log entries...</p>
-              </div>
-            ) : logs.length === 0 ? (
-              <div className="py-16 text-center text-slate-500 text-xs">
-                No activity logs recorded yet. Action a report to generate records.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
-                    <tr>
-                      <th className="py-3 px-4">Timestamp</th>
-                      <th className="py-3 px-4">Action</th>
-                      <th className="py-3 px-4">Report ID</th>
-                      <th className="py-3 px-4">Admin</th>
-                      <th className="py-3 px-4">Details / Notes</th>
-                      <th className="py-3 px-4">Origin IP</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {logs.map((log) => (
-                      <tr key={log.id} className="hover:bg-slate-50/80">
-                        <td className="py-3 px-4 font-mono text-slate-500 whitespace-nowrap">
-                          {log.created_at}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            log.action.includes('DELETE') ? 'bg-rose-100 text-rose-800' :
-                            log.action.includes('LAB') ? 'bg-emerald-100 text-emerald-800' :
-                            'bg-teal-100 text-teal-800'
-                          }`}>
-                            {log.action}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 font-mono font-bold text-teal-800">
-                          {log.report_id || 'Global'}
-                        </td>
-                        <td className="py-3 px-4 font-semibold text-slate-800">
-                          {log.admin_username}
-                        </td>
-                        <td className="py-3 px-4 text-slate-600 max-w-sm truncate">
-                          {log.notes || '—'}
-                        </td>
-                        <td className="py-3 px-4 font-mono text-[11px] text-slate-400">
-                          {log.ip_address || 'Localhost'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* RECORD LAB TEST MODAL */}
-      {labTestingReport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-3xl shadow-xl max-w-xl w-full p-6 border border-slate-200 space-y-4 max-h-[92vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <span className="text-xs text-teal-700 font-mono font-bold">Report: {labTestingReport.id}</span>
-                <h3 className="font-bold text-slate-900 text-base">Record Official Laboratory Water Test</h3>
-              </div>
-              <button
-                onClick={() => setLabTestingReport(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Administrative Remarks</label>
+              <textarea
+                rows={3}
+                placeholder="Remarks regarding action taken, department forwarded, or inspection results..."
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                className="w-full p-3 rounded-xl border border-slate-300 text-xs focus:ring-1 focus:ring-teal-500"
+              />
             </div>
 
-            <form onSubmit={handleSaveLabTest} className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">pH Level (6.5 - 8.5)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="e.g. 7.4"
-                    value={labForm.ph}
-                    onChange={(e) => setLabForm({ ...labForm, ph: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">TDS (mg/L, Norm &lt; 500)</label>
-                  <input
-                    type="number"
-                    step="1"
-                    placeholder="e.g. 480"
-                    value={labForm.tds}
-                    onChange={(e) => setLabForm({ ...labForm, tds: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Fluoride (mg/L, Norm &lt; 1.0)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="e.g. 0.8"
-                    value={labForm.fluoride}
-                    onChange={(e) => setLabForm({ ...labForm, fluoride: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Nitrate (mg/L, Norm &lt; 45)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    placeholder="e.g. 15.0"
-                    value={labForm.nitrate}
-                    onChange={(e) => setLabForm({ ...labForm, nitrate: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">E. Coli Bacteriological Test</label>
-                  <select
-                    value={labForm.e_coli}
-                    onChange={(e) => setLabForm({ ...labForm, e_coli: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-teal-500 bg-white"
-                  >
-                    <option value="Absent">Absent (Negative / Safe)</option>
-                    <option value="Present">Present (Positive / Contaminated)</option>
-                    <option value="High Risk">High Risk (Severe Coliform Counts)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Test Completion Date</label>
-                  <input
-                    type="date"
-                    value={labForm.testing_date}
-                    onChange={(e) => setLabForm({ ...labForm, testing_date: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Testing Authority / Accredited Lab</label>
-                <input
-                  type="text"
-                  value={labForm.lab_name}
-                  onChange={(e) => setLabForm({ ...labForm, lab_name: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-teal-500"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Lab Officer Analysis Notes</label>
-                <textarea
-                  rows={3}
-                  value={labForm.lab_notes}
-                  onChange={(e) => setLabForm({ ...labForm, lab_notes: e.target.value })}
-                  placeholder="Official observations regarding turbidity, odor, or chemical limits..."
-                  className="w-full p-3 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-teal-500"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setLabTestingReport(null)}
-                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={actionLoading}
-                  className="px-5 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold transition-colors shadow-sm disabled:opacity-50"
-                >
-                  {actionLoading ? 'Saving...' : 'Record Certified Results'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Status & Admin Notes Modal */}
-      {editingReport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-3xl shadow-xl max-w-lg w-full p-6 border border-slate-200 space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <span className="text-xs text-slate-400 font-mono">Report: {editingReport.id}</span>
-                <h3 className="font-bold text-slate-900 text-base">Update Status & Review Notes</h3>
-              </div>
-              <button
-                onClick={() => setEditingReport(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveStatus} className="space-y-4 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Investigation Status</label>
-                <select
-                  value={editStatus}
-                  onChange={(e) => setEditStatus(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
-                >
-                  <option value="Submitted">Submitted (Awaiting Initial Review)</option>
-                  <option value="Under Review">Under Review (Forwarded to Testing / Field Inspection)</option>
-                  <option value="Resolved">Resolved (Addressed by Panchayat / Repaired)</option>
-                  <option value="Archived">Archived</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Private Administrative Notes
-                </label>
-                <textarea
-                  rows={4}
-                  placeholder="e.g. Field inspection conducted on 20-Oct. Forwarded sample to RWS&S subdivision lab for turbidity and bacterial analysis..."
-                  value={editNotes}
-                  onChange={(e) => setEditNotes(e.target.value)}
-                  className="w-full p-3 rounded-xl border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-teal-500"
-                />
-                <span className="text-[11px] text-slate-400 mt-1 block">
-                  Private: These notes are strictly internal and hidden from public visitors.
-                </span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editVerified}
-                    onChange={(e) => setEditVerified(e.target.checked)}
-                    className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500"
-                  />
-                  <span className="text-xs font-semibold text-slate-800">
-                    Mark as Formally Lab-Verified
-                  </span>
-                </label>
-                <span className="text-[11px] text-slate-500 block mt-1 pl-6">
-                  Only check this if an official accredited laboratory report has confirmed the findings.
-                </span>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setEditingReport(null)}
-                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={actionLoading}
-                  className="px-5 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold transition-colors shadow-sm disabled:opacity-50"
-                >
-                  {actionLoading ? 'Saving...' : 'Save Changes'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {deletingReport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-3xl shadow-xl max-w-sm w-full p-6 border border-slate-200 text-center space-y-4">
-            <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
-              <AlertTriangle className="w-6 h-6" />
-            </div>
-            <h3 className="font-bold text-slate-900 text-base">Delete Report?</h3>
-            <p className="text-xs text-slate-500">
-              Are you sure you want to permanently delete report <strong className="text-slate-800 font-mono">{deletingReport.id}</strong>? Any associated photo file will also be deleted from storage.
-            </p>
-            <div className="flex items-center justify-center gap-2 pt-2">
+            <div className="pt-2 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setDeletingReport(null)}
+                onClick={() => setEditingReport(null)}
                 className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
               >
                 Cancel
               </button>
               <button
-                type="button"
+                type="submit"
                 disabled={actionLoading}
-                onClick={handleConfirmDelete}
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-sm"
+                className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs"
               >
-                {actionLoading ? 'Deleting...' : 'Yes, Delete'}
+                {actionLoading ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
-          </div>
+          </form>
         </div>
       )}
 
-      {/* Detail View Modal for Admin */}
-      {selectedReport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full p-6 border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <span className="font-mono font-bold text-teal-800">{selectedReport.id}</span>
-              <button
-                onClick={() => setSelectedReport(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
-              >
-                <X className="w-4 h-4" />
+      {/* MODAL 3: CERTIFIED LAB TESTING METRICS */}
+      {labTestingReport && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fadeIn">
+          <form onSubmit={handleSaveLabTest} className="bg-white rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <FlaskConical className="w-4 h-4 text-teal-600" />
+                <h3 className="font-bold text-slate-900 text-sm font-['Outfit']">
+                  Certified Laboratory Verification: {labTestingReport.id}
+                </h3>
+              </div>
+              <button type="button" onClick={() => setLabTestingReport(null)}>
+                <X className="w-4 h-4 text-slate-400" />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-2xl">
-                <div>
-                  <span className="text-slate-400 block font-medium">Village:</span>
-                  <span className="font-semibold text-slate-800">{selectedReport.village}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block font-medium">Landmark:</span>
-                  <span className="font-semibold text-slate-800">{selectedReport.landmark || 'None'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block font-medium">Reporter Name:</span>
-                  <span className="text-slate-800">{selectedReport.reporter_name || 'Anonymous'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block font-medium">Reporter Contact:</span>
-                  <span className="text-slate-800">{selectedReport.reporter_contact || 'None provided'}</span>
-                </div>
-              </div>
-
+            <div className="grid grid-cols-2 gap-3 text-xs">
               <div>
-                <span className="font-bold text-slate-700 block mb-1">Description:</span>
-                <p className="p-3 rounded-xl bg-slate-50 text-slate-700 leading-relaxed whitespace-pre-wrap">
-                  {selectedReport.description}
-                </p>
+                <label className="block font-semibold text-slate-700 mb-1">pH Level (6.5 - 8.5 Safe)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={labForm.ph}
+                  onChange={(e) => setLabForm({ ...labForm, ph: e.target.value })}
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-300 font-mono"
+                  placeholder="7.2"
+                />
               </div>
-
-              {selectedReport.photo_url && (
-                <div>
-                  <span className="font-bold text-slate-700 block mb-1">Uploaded Photo:</span>
-                  <img src={getPhotoUrl(selectedReport.photo_url)} alt="Proof" className="w-full rounded-2xl max-h-64 object-cover border" loading="lazy" />
-                </div>
-              )}
-
               <div>
-                <span className="font-bold text-slate-700 block mb-1">Internal Admin Notes:</span>
-                <p className="p-3 rounded-xl bg-amber-50/50 border border-amber-200 text-amber-950">
-                  {selectedReport.admin_notes || 'No administrative notes recorded yet.'}
-                </p>
+                <label className="block font-semibold text-slate-700 mb-1">TDS (mg/L) (&lt; 500 Safe)</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={labForm.tds}
+                  onChange={(e) => setLabForm({ ...labForm, tds: e.target.value })}
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-300 font-mono"
+                  placeholder="480"
+                />
               </div>
-
-              {/* Lab test results if any */}
-              {selectedReport.ph != null && (
-                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 space-y-1">
-                  <span className="font-bold text-emerald-950 block">Recorded Laboratory Results:</span>
-                  <div className="grid grid-cols-3 gap-2 text-[11px] pt-1">
-                    <div>pH: <strong>{selectedReport.ph}</strong></div>
-                    <div>TDS: <strong>{selectedReport.tds} mg/L</strong></div>
-                    <div>Fluoride: <strong>{selectedReport.fluoride || 'N/A'}</strong></div>
-                  </div>
-                </div>
-              )}
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Fluoride (mg/L) (&lt; 1.5 Safe)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={labForm.fluoride}
+                  onChange={(e) => setLabForm({ ...labForm, fluoride: e.target.value })}
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-300 font-mono"
+                  placeholder="0.8"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Nitrate (mg/L) (&lt; 45 Safe)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={labForm.nitrate}
+                  onChange={(e) => setLabForm({ ...labForm, nitrate: e.target.value })}
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-300 font-mono"
+                  placeholder="15.0"
+                />
+              </div>
             </div>
 
-            <div className="flex justify-end pt-2 border-t border-slate-100">
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">E. Coli / Coliform</label>
+                <select
+                  value={labForm.e_coli}
+                  onChange={(e) => setLabForm({ ...labForm, e_coli: e.target.value })}
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-300"
+                >
+                  <option value="Absent">Absent (Bacteriologically Safe)</option>
+                  <option value="Present (Detected)">Present (Contaminated)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Lab Reference Certificate No.</label>
+                <input
+                  type="text"
+                  value={labForm.report_reference_no}
+                  onChange={(e) => setLabForm({ ...labForm, report_reference_no: e.target.value })}
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-300 font-mono"
+                  placeholder="RWS-GNT-2026-904"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Sample Collection Date</label>
+                <input
+                  type="date"
+                  value={labForm.sample_collection_date}
+                  onChange={(e) => setLabForm({ ...labForm, sample_collection_date: e.target.value })}
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-300"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Lab Testing Date</label>
+                <input
+                  type="date"
+                  value={labForm.testing_date}
+                  onChange={(e) => setLabForm({ ...labForm, testing_date: e.target.value })}
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-300"
+                />
+              </div>
+            </div>
+
+            <div className="text-xs">
+              <label className="block font-semibold text-slate-700 mb-1">Accredited Testing Laboratory Name</label>
+              <input
+                type="text"
+                value={labForm.lab_name}
+                onChange={(e) => setLabForm({ ...labForm, lab_name: e.target.value })}
+                className="w-full px-3 py-1.5 rounded-lg border border-slate-300"
+              />
+            </div>
+
+            <div className="text-xs">
+              <label className="block font-semibold text-slate-700 mb-1">Lab Notes & BIS IS 10500 Compliance Remarks</label>
+              <textarea
+                rows={2}
+                value={labForm.lab_notes}
+                onChange={(e) => setLabForm({ ...labForm, lab_notes: e.target.value })}
+                className="w-full p-2.5 rounded-lg border border-slate-300"
+              />
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2">
               <button
-                onClick={() => setSelectedReport(null)}
-                className="px-4 py-2 rounded-xl bg-slate-800 text-white text-xs font-semibold"
+                type="button"
+                onClick={() => setLabTestingReport(null)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
               >
-                Close
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={actionLoading}
+                className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs"
+              >
+                {actionLoading ? 'Saving...' : 'Record Certified Results'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL 4: CHANGE PASSWORD */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <form onSubmit={handleChangePasswordSubmit} className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="font-bold text-slate-900 text-sm font-['Outfit']">Change Password</h3>
+              <button type="button" onClick={() => setShowPasswordModal(false)}>
+                <X className="w-4 h-4 text-slate-400" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Current Password</label>
+              <input
+                type="password"
+                required
+                value={passwordForm.current_password}
+                onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">New Password (min 8 chars)</label>
+              <input
+                type="password"
+                required
+                minLength={8}
+                value={passwordForm.new_password}
+                onChange={(e) => setPasswordForm({ ...passwordForm, new_password: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Confirm New Password</label>
+              <input
+                type="password"
+                required
+                minLength={8}
+                value={passwordForm.confirm_password}
+                onChange={(e) => setPasswordForm({ ...passwordForm, confirm_password: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
+              />
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowPasswordModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={actionLoading}
+                className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs"
+              >
+                {actionLoading ? 'Updating...' : 'Update Password'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL 5: CREATE USER / OFFICER (SUPER ADMIN) */}
+      {showCreateUserModal && isSuperAdmin && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <form onSubmit={handleCreateUserSubmit} className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="font-bold text-slate-900 text-sm font-['Outfit']">Create New User / Officer</h3>
+              <button type="button" onClick={() => setShowCreateUserModal(false)}>
+                <X className="w-4 h-4 text-slate-400" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Username</label>
+              <input
+                type="text"
+                required
+                value={createUserForm.username}
+                onChange={(e) => setCreateUserForm({ ...createUserForm, username: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
+                placeholder="officer_rao"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Email</label>
+              <input
+                type="email"
+                required
+                value={createUserForm.email}
+                onChange={(e) => setCreateUserForm({ ...createUserForm, email: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
+                placeholder="officer@jalawatch.org"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Temporary Password (min 8 chars)</label>
+              <input
+                type="password"
+                required
+                minLength={8}
+                value={createUserForm.password}
+                onChange={(e) => setCreateUserForm({ ...createUserForm, password: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">RBAC Role</label>
+              <select
+                value={createUserForm.role}
+                onChange={(e) => setCreateUserForm({ ...createUserForm, role: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
+              >
+                <option value="field_officer">Field Officer</option>
+                <option value="admin">Admin</option>
+                <option value="super_admin">Super Admin</option>
+              </select>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowCreateUserModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={actionLoading}
+                className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs"
+              >
+                {actionLoading ? 'Creating...' : 'Create Account'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL 6: CONFIRM DELETION */}
+      {deletingReport && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-xl border border-slate-200">
+            <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h4 className="font-bold text-slate-900 text-base">Permanently Delete Report?</h4>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Are you sure you want to delete report <strong className="text-slate-800">{deletingReport.id}</strong> ({deletingReport.village})? This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="pt-2 flex items-center justify-center gap-2">
+              <button
+                onClick={() => setDeletingReport(null)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex-1"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={actionLoading}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold flex-1 shadow-xs"
+              >
+                {actionLoading ? 'Deleting...' : 'Delete Permanently'}
               </button>
             </div>
           </div>

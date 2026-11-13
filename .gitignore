@@ -55,4 +55,6 @@ yarn-error.*
 
 # Uploads & Temporary Cache (optional if preserving demo uploads)
 uploads/*.tmp
+backend/uploads/*
+!backend/uploads/.gitkeep
 .neon

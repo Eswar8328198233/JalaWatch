@@ -127,7 +127,22 @@ export const translations = {
     // Lab
     lab_section_title: 'Laboratory Testing Parameters',
     lab_not_tested: 'Awaiting formal laboratory chemical testing',
-    lab_tested: 'Laboratory Certified Results'
+    lab_tested: 'Laboratory Certified Results',
+
+    // Extended Location & Survey Fields
+    form_district: 'District',
+    form_state: 'State',
+    form_water_appearance: 'Water Visual Appearance',
+    form_water_smell: 'Water Odor / Smell',
+    form_water_usage: 'Primary Water Usage',
+    form_issue_duration: 'How long has this issue existed?',
+    form_nearby_wastewater: 'Nearby Wastewater / Drainage Source',
+    form_suspected_distance: 'Estimated Distance to Wastewater Source',
+    form_additional_notes: 'Additional Field Observations',
+    form_priority: 'Issue Priority',
+    form_auto_detected: 'Automatically Detected',
+    form_accuracy: 'GPS Accuracy',
+    form_update_location_prompt: 'Update locality fields to newly detected location?'
   },
 
   te: {
@@ -254,7 +269,22 @@ export const translations = {
     // Lab
     lab_section_title: 'ప్రయోగశాల (ల్యాబ్) పరీక్ష ఫలితాలు',
     lab_not_tested: 'అధికారిక ల్యాబ్ పరీక్ష ఇంకా జరగవలసి ఉంది',
-    lab_tested: 'ల్యాబ్ ధృవీకరించిన ఫలితాలు'
+    lab_tested: 'ల్యాబ్ ధృవీకరించిన ఫలితాలు',
+
+    // Extended Location & Survey Fields
+    form_district: 'జిల్లా',
+    form_state: 'రాష్ట్రం',
+    form_water_appearance: 'నీటి రూపం / రంగు',
+    form_water_smell: 'నీటి వాసన',
+    form_water_usage: 'నీటి ప్రాథమిక ఉపయోగం',
+    form_issue_duration: 'ఈ సమస్య ఎంత కాలంగా ఉంది?',
+    form_nearby_wastewater: 'సమీపంలోని మురుగునీటి / డ్రైనేజ్ వనరు',
+    form_suspected_distance: 'మురుగు నిల్వకు సుమారు దూరం',
+    form_additional_notes: 'అదనపు పరిశీలన వివరాలు',
+    form_priority: 'సమస్య ప్రాధాన్యత',
+    form_auto_detected: 'ఆటోమేటిక్‌గా గుర్తించబడింది',
+    form_accuracy: 'GPS ఖచ్చితత్వం',
+    form_update_location_prompt: 'కొత్తగా గుర్తించిన ప్రాంతం వివరాలను అప్‌డేట్ చేయాలా?'
   }
 };
 

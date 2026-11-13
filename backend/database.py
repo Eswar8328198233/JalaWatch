@@ -225,7 +225,10 @@ def init_db():
                     password_hash VARCHAR(255) NOT NULL,
                     role VARCHAR(50) DEFAULT 'admin',
                     created_at VARCHAR(100) NOT NULL,
-                    last_login VARCHAR(100)
+                    last_login VARCHAR(100),
+                    failed_logins INTEGER DEFAULT 0,
+                    locked_until VARCHAR(100),
+                    phone VARCHAR(50)
                 );
             """)
 
@@ -258,7 +261,20 @@ def init_db():
                     testing_date VARCHAR(50),
                     lab_certificate_url VARCHAR(1000),
                     lab_notes TEXT,
-                    lab_status VARCHAR(50) DEFAULT 'Not Tested'
+                    lab_status VARCHAR(50) DEFAULT 'Not Tested',
+                    district VARCHAR(100),
+                    state VARCHAR(100),
+                    water_appearance VARCHAR(100),
+                    water_smell VARCHAR(100),
+                    water_usage VARCHAR(100),
+                    issue_duration VARCHAR(100),
+                    nearby_wastewater VARCHAR(100),
+                    suspected_distance VARCHAR(100),
+                    additional_notes TEXT,
+                    priority VARCHAR(50) DEFAULT 'Medium',
+                    assigned_to VARCHAR(100),
+                    report_reference_no VARCHAR(100),
+                    sample_collection_date VARCHAR(50)
                 );
             """)
 
@@ -275,6 +291,17 @@ def init_db():
                     timestamp VARCHAR(100) NOT NULL
                 );
             """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS report_followup_notes (
+                    id SERIAL PRIMARY KEY,
+                    report_id VARCHAR(50) NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+                    officer_id VARCHAR(100),
+                    officer_name VARCHAR(150) NOT NULL,
+                    note TEXT NOT NULL,
+                    created_at VARCHAR(100) NOT NULL
+                );
+            """)
         else:
             # SQLite schema
             cursor.execute("""
@@ -285,7 +312,10 @@ def init_db():
                     password_hash TEXT NOT NULL,
                     role TEXT DEFAULT 'admin',
                     created_at TEXT NOT NULL,
-                    last_login TEXT
+                    last_login TEXT,
+                    failed_logins INTEGER DEFAULT 0,
+                    locked_until TEXT,
+                    phone TEXT
                 );
             """)
 
@@ -318,7 +348,20 @@ def init_db():
                     testing_date TEXT,
                     lab_certificate_url TEXT,
                     lab_notes TEXT,
-                    lab_status TEXT DEFAULT 'Not Tested'
+                    lab_status TEXT DEFAULT 'Not Tested',
+                    district TEXT,
+                    state TEXT,
+                    water_appearance TEXT,
+                    water_smell TEXT,
+                    water_usage TEXT,
+                    issue_duration TEXT,
+                    nearby_wastewater TEXT,
+                    suspected_distance TEXT,
+                    additional_notes TEXT,
+                    priority TEXT DEFAULT 'Medium',
+                    assigned_to TEXT,
+                    report_reference_no TEXT,
+                    sample_collection_date TEXT
                 );
             """)
 
@@ -336,11 +379,22 @@ def init_db():
                 );
             """)
 
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS report_followup_notes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    report_id TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+                    officer_id TEXT,
+                    officer_name TEXT NOT NULL,
+                    note TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+            """)
+
             # Safe automated schema migration for existing SQLite database
             try:
                 cursor.execute("PRAGMA table_info(reports);")
                 existing_cols = {row["name"] for row in cursor.fetchall()}
-                lab_columns = [
+                new_columns = [
                     ("ph", "REAL"),
                     ("tds", "REAL"),
                     ("fluoride", "REAL"),
@@ -350,11 +404,35 @@ def init_db():
                     ("testing_date", "TEXT"),
                     ("lab_certificate_url", "TEXT"),
                     ("lab_notes", "TEXT"),
-                    ("lab_status", "TEXT DEFAULT 'Not Tested'")
+                    ("lab_status", "TEXT DEFAULT 'Not Tested'"),
+                    ("district", "TEXT"),
+                    ("state", "TEXT"),
+                    ("water_appearance", "TEXT"),
+                    ("water_smell", "TEXT"),
+                    ("water_usage", "TEXT"),
+                    ("issue_duration", "TEXT"),
+                    ("nearby_wastewater", "TEXT"),
+                    ("suspected_distance", "TEXT"),
+                    ("additional_notes", "TEXT"),
+                    ("priority", "TEXT DEFAULT 'Medium'"),
+                    ("assigned_to", "TEXT"),
+                    ("report_reference_no", "TEXT"),
+                    ("sample_collection_date", "TEXT")
                 ]
-                for col_name, col_type in lab_columns:
+                for col_name, col_type in new_columns:
                     if col_name not in existing_cols:
                         cursor.execute(f"ALTER TABLE reports ADD COLUMN {col_name} {col_type};")
+
+                cursor.execute("PRAGMA table_info(admins);")
+                existing_admin_cols = {row["name"] for row in cursor.fetchall()}
+                admin_cols = [
+                    ("failed_logins", "INTEGER DEFAULT 0"),
+                    ("locked_until", "TEXT"),
+                    ("phone", "TEXT")
+                ]
+                for col_name, col_type in admin_cols:
+                    if col_name not in existing_admin_cols:
+                        cursor.execute(f"ALTER TABLE admins ADD COLUMN {col_name} {col_type};")
             except Exception as e:
                 print(f"[Database Migration Warning] {e}")
 
@@ -365,3 +443,6 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_created ON reports(created_at DESC);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_activity_created ON admin_activity_logs(timestamp DESC);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_activity_report ON admin_activity_logs(report_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_priority ON reports(priority);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_assigned ON reports(assigned_to);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_notes_report ON report_followup_notes(report_id);")

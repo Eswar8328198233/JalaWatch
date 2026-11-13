@@ -146,7 +146,20 @@ def sync():
             testing_date TEXT,
             lab_certificate_url TEXT,
             lab_notes TEXT,
-            lab_status TEXT DEFAULT 'Not Tested'
+            lab_status TEXT DEFAULT 'Not Tested',
+            district TEXT,
+            state TEXT,
+            water_appearance TEXT,
+            water_smell TEXT,
+            water_usage TEXT,
+            issue_duration TEXT,
+            nearby_wastewater TEXT,
+            suspected_distance TEXT,
+            additional_notes TEXT,
+            priority TEXT DEFAULT 'Medium',
+            assigned_to TEXT,
+            report_reference_no TEXT,
+            sample_collection_date TEXT
         );
     """)
 
@@ -161,6 +174,17 @@ def sync():
             new_status TEXT,
             details TEXT,
             timestamp TEXT NOT NULL
+        );
+    """)
+
+    sq_cur.execute("""
+        CREATE TABLE IF NOT EXISTS report_followup_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_id TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+            officer_id TEXT,
+            officer_name TEXT NOT NULL,
+            note TEXT NOT NULL,
+            created_at TEXT NOT NULL
         );
     """)
 
@@ -200,8 +224,11 @@ def sync():
                         reporter_contact, status, is_verified, admin_notes,
                         created_at, updated_at, is_demo,
                         ph, tds, fluoride, nitrate, e_coli, lab_name, testing_date,
-                        lab_certificate_url, lab_notes, lab_status
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        lab_certificate_url, lab_notes, lab_status,
+                        district, state, water_appearance, water_smell, water_usage,
+                        issue_duration, nearby_wastewater, suspected_distance, additional_notes,
+                        priority, assigned_to, report_reference_no, sample_collection_date
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     r["id"], r["village"], r["category"], r["water_source"], r["date_observed"],
                     r["landmark"], r["description"], r["photo_url"], r["latitude"], r["longitude"],
@@ -209,7 +236,12 @@ def sync():
                     r["admin_notes"], r["created_at"], r["updated_at"], r["is_demo"],
                     r.get("ph"), r.get("tds"), r.get("fluoride"), r.get("nitrate"), r.get("e_coli"),
                     r.get("lab_name"), r.get("testing_date"), r.get("lab_certificate_url"),
-                    r.get("lab_notes"), r.get("lab_status", "Not Tested")
+                    r.get("lab_notes"), r.get("lab_status", "Not Tested"),
+                    r.get("district"), r.get("state"), r.get("water_appearance"), r.get("water_smell"),
+                    r.get("water_usage"), r.get("issue_duration"), r.get("nearby_wastewater"),
+                    r.get("suspected_distance"), r.get("additional_notes"),
+                    r.get("priority", "Medium"), r.get("assigned_to"), r.get("report_reference_no"),
+                    r.get("sample_collection_date")
                 ))
             synced_reports += 1
         else:
@@ -222,7 +254,10 @@ def sync():
                         reporter_contact = ?, status = ?, is_verified = ?, admin_notes = ?,
                         updated_at = ?, is_demo = ?,
                         ph = ?, tds = ?, fluoride = ?, nitrate = ?, e_coli = ?, lab_name = ?, testing_date = ?,
-                        lab_certificate_url = ?, lab_notes = ?, lab_status = ?
+                        lab_certificate_url = ?, lab_notes = ?, lab_status = ?,
+                        district = ?, state = ?, water_appearance = ?, water_smell = ?, water_usage = ?,
+                        issue_duration = ?, nearby_wastewater = ?, suspected_distance = ?, additional_notes = ?,
+                        priority = ?, assigned_to = ?, report_reference_no = ?, sample_collection_date = ?
                     WHERE id = ?
                 """, (
                     r["village"], r["category"], r["water_source"], r["date_observed"], r["landmark"],
@@ -232,6 +267,11 @@ def sync():
                     r.get("ph"), r.get("tds"), r.get("fluoride"), r.get("nitrate"), r.get("e_coli"),
                     r.get("lab_name"), r.get("testing_date"), r.get("lab_certificate_url"),
                     r.get("lab_notes"), r.get("lab_status", "Not Tested"),
+                    r.get("district"), r.get("state"), r.get("water_appearance"), r.get("water_smell"),
+                    r.get("water_usage"), r.get("issue_duration"), r.get("nearby_wastewater"),
+                    r.get("suspected_distance"), r.get("additional_notes"),
+                    r.get("priority", "Medium"), r.get("assigned_to"), r.get("report_reference_no"),
+                    r.get("sample_collection_date"),
                     r["id"]
                 ))
             updated_reports += 1

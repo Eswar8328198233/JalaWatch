@@ -36,12 +36,13 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verifies a plain password against the stored hash."""
     return check_password_hash(hashed_password, plain_password)
 
-def generate_jwt_token(admin_id: int, username: str, email: str) -> str:
+def generate_jwt_token(admin_id: int, username: str, email: str, role: str = "admin") -> str:
     """Generates a secure JWT token valid for 24 hours."""
     payload = {
         "sub": str(admin_id),
         "username": username,
         "email": email,
+        "role": role,
         "iat": datetime.datetime.now(datetime.timezone.utc),
         "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=JWT_EXPIRATION_HOURS)
     }
@@ -85,3 +86,19 @@ def admin_required(f):
         request.admin = decoded
         return f(*args, **kwargs)
     return decorated_function
+
+def role_required(allowed_roles):
+    """Decorator to require specific admin roles (e.g. ['super_admin', 'admin'])."""
+    def decorator(f):
+        @wraps(f)
+        @admin_required
+        def decorated_function(*args, **kwargs):
+            admin_role = request.admin.get("role", "admin")
+            if admin_role not in allowed_roles:
+                return jsonify({
+                    "error": f"Access denied. Required role: {', '.join(allowed_roles)}. Your role is '{admin_role}'.",
+                    "code": "FORBIDDEN"
+                }), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator

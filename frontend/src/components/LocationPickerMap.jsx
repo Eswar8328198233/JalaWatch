@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import {
@@ -6,14 +6,15 @@ import {
   Navigation,
   Compass,
   AlertCircle,
-  AlertTriangle,
   CheckCircle2,
   Loader2,
   X,
   Crosshair,
   Edit3,
-  RotateCcw
+  RotateCcw,
+  Sparkles
 } from 'lucide-react';
+import { reverseGeocode } from '../services/api';
 
 // Custom marker icon with drop pin shape & vibrant teal branding
 const customMarkerIcon = new L.DivIcon({
@@ -26,7 +27,7 @@ const customMarkerIcon = new L.DivIcon({
   popupAnchor: [0, -32],
 });
 
-// Map click handler to support manual placement
+// Map click handler to support manual placement with reverse geocoding
 function MapClickHandler({ onLocationSelect }) {
   useMapEvents({
     click(e) {
@@ -56,7 +57,8 @@ export default function LocationPickerMap({ latitude, longitude, onLocationChang
   const currentPos = latitude && longitude ? [Number(latitude), Number(longitude)] : defaultPos;
 
   const [geoLocating, setGeoLocating] = useState(false);
-  const [geoStatus, setGeoStatus] = useState(null); // { type: 'success' | 'error' | 'loading', title: string, message: string, accuracy?: number }
+  const [geocoding, setGeocoding] = useState(false);
+  const [geoStatus, setGeoStatus] = useState(null); // { type, title, message, accuracy, address }
   const [flyTrigger, setFlyTrigger] = useState(0);
   const [showManualInputs, setShowManualInputs] = useState(false);
   const [manualLat, setManualLat] = useState(latitude ? String(latitude) : '16.4382');
@@ -76,17 +78,72 @@ export default function LocationPickerMap({ latitude, longitude, onLocationChang
     { label: 'Mangalagiri', lat: 16.4250, lng: 80.5600 },
   ];
 
-  const handleSelectPreset = (lat, lng) => {
-    onLocationChange(lat, lng);
+  const handleSelectPreset = async (lat, lng, label) => {
+    setManualLat(String(lat));
+    setManualLng(String(lng));
     setFlyTrigger((prev) => prev + 1);
+    setGeocoding(true);
     setGeoStatus({
-      type: 'info',
-      title: 'Preset Selected',
-      message: `Coordinates updated to ${lat.toFixed(4)}° N, ${lng.toFixed(4)}° E.`
+      type: 'loading',
+      title: 'Looking up Location Details...',
+      message: `Fetching locality details for ${label}...`
     });
+
+    try {
+      const addr = await reverseGeocode(lat, lng);
+      setGeocoding(false);
+      onLocationChange(lat, lng, addr, null);
+      setGeoStatus({
+        type: 'success',
+        title: `${label} Selected`,
+        message: `Coordinates set to ${lat.toFixed(4)}° N, ${lng.toFixed(4)}° E. ${addr.display_name ? `(${addr.display_name})` : ''}`,
+        address: addr
+      });
+    } catch {
+      setGeocoding(false);
+      onLocationChange(lat, lng, { village: label.split(' ')[0] }, null);
+      setGeoStatus({
+        type: 'info',
+        title: `${label} Selected`,
+        message: `Coordinates set to ${lat.toFixed(4)}° N, ${lng.toFixed(4)}° E.`
+      });
+    }
   };
 
-  const handleManualApply = (e) => {
+  const handleMapPinSelected = async (lat, lng) => {
+    setManualLat(String(lat));
+    setManualLng(String(lng));
+    setGeocoding(true);
+    setGeoStatus({
+      type: 'loading',
+      title: 'Resolving Address Details...',
+      message: `Point placed at ${lat.toFixed(4)}° N, ${lng.toFixed(4)}° E. Looking up village & street...`
+    });
+
+    try {
+      const addr = await reverseGeocode(lat, lng);
+      setGeocoding(false);
+      onLocationChange(lat, lng, addr, null);
+      setGeoStatus({
+        type: 'success',
+        title: 'Location Selected',
+        message: addr.display_name 
+          ? `Identified: ${addr.display_name}`
+          : `Coordinates pinned at ${lat.toFixed(4)}° N, ${lng.toFixed(4)}° E.`,
+        address: addr
+      });
+    } catch {
+      setGeocoding(false);
+      onLocationChange(lat, lng, null, null);
+      setGeoStatus({
+        type: 'info',
+        title: 'Coordinates Pinned',
+        message: `Pinned at ${lat.toFixed(4)}° N, ${lng.toFixed(4)}° E (Address lookup unavailable).`
+      });
+    }
+  };
+
+  const handleManualApply = async (e) => {
     e?.preventDefault();
     const parsedLat = parseFloat(manualLat);
     const parsedLng = parseFloat(manualLng);
@@ -109,17 +166,41 @@ export default function LocationPickerMap({ latitude, longitude, onLocationChang
       return;
     }
 
-    onLocationChange(Number(parsedLat.toFixed(6)), Number(parsedLng.toFixed(6)));
+    const lat = Number(parsedLat.toFixed(6));
+    const lng = Number(parsedLng.toFixed(6));
     setFlyTrigger((prev) => prev + 1);
+    setGeocoding(true);
     setGeoStatus({
-      type: 'success',
-      title: 'Coordinates Updated',
-      message: `Manually set to ${parsedLat.toFixed(6)}° N, ${parsedLng.toFixed(6)}° E.`
+      type: 'loading',
+      title: 'Resolving Manual Coordinates...',
+      message: `Looking up address for ${lat.toFixed(4)}° N, ${lng.toFixed(4)}° E...`
     });
+
+    try {
+      const addr = await reverseGeocode(lat, lng);
+      setGeocoding(false);
+      onLocationChange(lat, lng, addr, null);
+      setGeoStatus({
+        type: 'success',
+        title: 'Coordinates Applied & Address Resolved',
+        message: addr.display_name 
+          ? `Identified: ${addr.display_name}`
+          : `Manually set to ${lat}° N, ${lng}° E.`,
+        address: addr
+      });
+    } catch {
+      setGeocoding(false);
+      onLocationChange(lat, lng, null, null);
+      setGeoStatus({
+        type: 'success',
+        title: 'Coordinates Updated',
+        message: `Manually set to ${lat}° N, ${lng}° E.`
+      });
+    }
   };
 
   const handleResetDefault = () => {
-    onLocationChange(defaultPos[0], defaultPos[1]);
+    onLocationChange(defaultPos[0], defaultPos[1], { village: 'Nutakki', district: 'Guntur District', state: 'Andhra Pradesh' }, null);
     setFlyTrigger((prev) => prev + 1);
     setGeoStatus(null);
   };
@@ -146,10 +227,11 @@ export default function LocationPickerMap({ latitude, longitude, onLocationChang
     }
 
     setGeoLocating(true);
+    setGeocoding(false);
     setGeoStatus({
       type: 'loading',
       title: 'Acquiring GPS Signal...',
-      message: 'Requesting high-accuracy coordinates. If prompted by your browser, please click "Allow".'
+      message: 'Requesting high-accuracy satellite & network coordinates. If prompted, please click "Allow".'
     });
 
     const highAccuracyOptions = {
@@ -164,21 +246,44 @@ export default function LocationPickerMap({ latitude, longitude, onLocationChang
       maximumAge: 120000,
     };
 
-    const handleSuccess = (pos) => {
+    const handleGpsSuccess = async (pos) => {
       const lat = Number(pos.coords.latitude.toFixed(6));
       const lng = Number(pos.coords.longitude.toFixed(6));
       const accuracy = pos.coords.accuracy ? Math.round(pos.coords.accuracy) : null;
 
       setGeoLocating(false);
-      onLocationChange(lat, lng);
+      setGeocoding(true);
       setFlyTrigger((prev) => prev + 1);
 
       setGeoStatus({
-        type: 'success',
-        title: 'Location Detected Successfully',
-        message: `Locked at ${lat.toFixed(4)}° N, ${lng.toFixed(4)}° E${accuracy ? ` (Accuracy: ±${accuracy}m)` : ''}. Map centered.`,
+        type: 'loading',
+        title: 'GPS Signal Locked. Resolving Address...',
+        message: `Coordinates acquired (Accuracy: ±${accuracy || 10}m). Performing reverse geocoding for locality, district & street...`,
         accuracy
       });
+
+      try {
+        const addr = await reverseGeocode(lat, lng);
+        setGeocoding(false);
+        onLocationChange(lat, lng, addr, accuracy);
+
+        setGeoStatus({
+          type: 'success',
+          title: 'Location & Address Detected Successfully',
+          message: `Locked at ${lat.toFixed(4)}° N, ${lng.toFixed(4)}° E (Accuracy: ±${accuracy}m). ${addr.display_name ? `Resolved: ${addr.display_name}` : ''}`,
+          accuracy,
+          address: addr
+        });
+      } catch (err) {
+        setGeocoding(false);
+        onLocationChange(lat, lng, null, accuracy);
+        setGeoStatus({
+          type: 'info',
+          title: 'GPS Location Locked',
+          message: `Coordinates locked: ${lat.toFixed(4)}° N, ${lng.toFixed(4)}° E (Accuracy: ±${accuracy}m). Address lookup timed out.`,
+          accuracy
+        });
+      }
     };
 
     const handleFailure = (err) => {
@@ -187,15 +292,16 @@ export default function LocationPickerMap({ latitude, longitude, onLocationChang
         setGeoStatus({
           type: 'loading',
           title: 'Retrying with Network Location...',
-          message: 'GPS satellite fix timed out. Retrying with Wi-Fi / cell network positioning...'
+          message: 'Satellite fix timed out. Retrying with Wi-Fi / cell network positioning...'
         });
 
         navigator.geolocation.getCurrentPosition(
           (fallbackPos) => {
-            handleSuccess(fallbackPos);
+            handleGpsSuccess(fallbackPos);
           },
           (fallbackErr) => {
             setGeoLocating(false);
+            setGeocoding(false);
             parseAndSetError(fallbackErr);
           },
           lowAccuracyOptions
@@ -204,6 +310,7 @@ export default function LocationPickerMap({ latitude, longitude, onLocationChang
       }
 
       setGeoLocating(false);
+      setGeocoding(false);
       parseAndSetError(err);
     };
 
@@ -216,7 +323,7 @@ export default function LocationPickerMap({ latitude, longitude, onLocationChang
         message = 'Location access was blocked. Click the lock icon 🔒 in your browser address bar, set Location to "Allow", and click "Detect My Location" again.';
       } else if (err.code === 2 /* POSITION_UNAVAILABLE */) {
         title = 'Location Unavailable';
-        message = 'Your device GPS / network could not acquire a fix. You can pinpoint your site by clicking on the map.';
+        message = 'Your device GPS / network could not acquire a fix. You can pinpoint your site by clicking directly on the map.';
       } else if (err.code === 3 /* TIMEOUT */) {
         title = 'Location Request Timed Out';
         message = 'The location request timed out. Please verify your device location settings, or select your location on the map.';
@@ -229,7 +336,7 @@ export default function LocationPickerMap({ latitude, longitude, onLocationChang
       });
     };
 
-    navigator.geolocation.getCurrentPosition(handleSuccess, handleFailure, highAccuracyOptions);
+    navigator.geolocation.getCurrentPosition(handleGpsSuccess, handleFailure, highAccuracyOptions);
   };
 
   return (
@@ -245,19 +352,21 @@ export default function LocationPickerMap({ latitude, longitude, onLocationChang
           <button
             type="button"
             onClick={handleDetectLocation}
-            disabled={geoLocating}
+            disabled={geoLocating || geocoding}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-xs border transition-all shadow-sm ${
-              geoLocating
+              geoLocating || geocoding
                 ? 'bg-brand-100 text-brand-800 border-brand-300 cursor-wait'
                 : 'bg-brand-600 hover:bg-brand-700 text-white border-brand-600 active:scale-95'
             }`}
           >
-            {geoLocating ? (
+            {geoLocating || geocoding ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <Navigation className="w-3.5 h-3.5" />
             )}
-            <span>{geoLocating ? 'Detecting Location...' : 'Detect My Location'}</span>
+            <span>
+              {geoLocating ? 'Acquiring GPS...' : geocoding ? 'Resolving Address...' : 'Detect My Location'}
+            </span>
           </button>
 
           <button
@@ -291,7 +400,14 @@ export default function LocationPickerMap({ latitude, longitude, onLocationChang
           {geoStatus.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />}
 
           <div className="flex-1 pr-5">
-            <p className="font-semibold">{geoStatus.title}</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-semibold">{geoStatus.title}</p>
+              {geoStatus.accuracy && (
+                <span className="inline-flex items-center gap-1 bg-emerald-200/80 text-emerald-900 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                  ±{geoStatus.accuracy}m Accuracy
+                </span>
+              )}
+            </div>
             <p className="mt-0.5 opacity-90 leading-relaxed">{geoStatus.message}</p>
           </div>
 
@@ -303,6 +419,46 @@ export default function LocationPickerMap({ latitude, longitude, onLocationChang
           >
             <X className="w-3.5 h-3.5" />
           </button>
+        </div>
+      )}
+
+      {/* Reverse Geocoded Address Preview Card */}
+      {geoStatus?.address && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs animate-fadeIn space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-slate-700 flex items-center gap-1 text-[11px]">
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              Reverse-Geocoded Location Intelligence
+            </span>
+            <span className="text-[10px] text-slate-400">Auto-populated into report</span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="bg-white p-2 rounded-lg border border-slate-200">
+              <span className="text-[10px] text-slate-400 font-semibold uppercase block">Village / Locality</span>
+              <span className="font-bold text-teal-800 truncate block">
+                {geoStatus.address.village || 'Locality Detected'}
+              </span>
+            </div>
+            <div className="bg-white p-2 rounded-lg border border-slate-200">
+              <span className="text-[10px] text-slate-400 font-semibold uppercase block">District</span>
+              <span className="font-bold text-slate-800 truncate block">
+                {geoStatus.address.district || 'Guntur District'}
+              </span>
+            </div>
+            <div className="bg-white p-2 rounded-lg border border-slate-200">
+              <span className="text-[10px] text-slate-400 font-semibold uppercase block">State</span>
+              <span className="font-bold text-slate-800 truncate block">
+                {geoStatus.address.state || 'Andhra Pradesh'}
+              </span>
+            </div>
+            <div className="bg-white p-2 rounded-lg border border-slate-200">
+              <span className="text-[10px] text-slate-400 font-semibold uppercase block">Street / Landmark</span>
+              <span className="font-bold text-slate-800 truncate block" title={geoStatus.address.street || geoStatus.address.landmark}>
+                {geoStatus.address.street || geoStatus.address.landmark || 'Street Area'}
+              </span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -354,7 +510,7 @@ export default function LocationPickerMap({ latitude, longitude, onLocationChang
               type="submit"
               className="px-3 py-1 bg-brand-600 hover:bg-brand-700 text-white rounded font-medium shadow-sm transition-colors"
             >
-              Apply Coordinates
+              Apply Coordinates & Resolve
             </button>
           </div>
         </form>
@@ -373,7 +529,7 @@ export default function LocationPickerMap({ latitude, longitude, onLocationChang
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
-          <MapClickHandler onLocationSelect={onLocationChange} />
+          <MapClickHandler onLocationSelect={handleMapPinSelected} />
           <MapViewController center={currentPos} zoom={16} flyTrigger={flyTrigger} />
 
           {latitude && longitude && (
@@ -386,6 +542,11 @@ export default function LocationPickerMap({ latitude, longitude, onLocationChang
                     <br />
                     Lng: {Number(longitude).toFixed(6)}°
                   </div>
+                  {geoStatus?.accuracy && (
+                    <div className="mt-1 text-[10px] text-emerald-700 font-semibold">
+                      GPS Accuracy: ±{geoStatus.accuracy}m
+                    </div>
+                  )}
                   <div className="mt-1 text-[10px] text-slate-400 italic">
                     Click anywhere on the map to change position.
                   </div>
@@ -401,23 +562,29 @@ export default function LocationPickerMap({ latitude, longitude, onLocationChang
           Click anywhere on the map to pinpoint exact site
         </div>
 
-        {geoLocating && (
-          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-[400] bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-lg border border-brand-200 flex items-center gap-2 text-xs font-semibold text-brand-700 animate-pulse pointer-events-none">
+        {(geoLocating || geocoding) && (
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-[400] bg-white/95 backdrop-blur-sm px-3.5 py-1.5 rounded-full shadow-lg border border-brand-200 flex items-center gap-2 text-xs font-semibold text-brand-700 animate-pulse pointer-events-none">
             <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-600" />
-            Detecting device GPS...
+            {geoLocating ? 'Detecting device GPS...' : 'Reverse geocoding address...'}
           </div>
         )}
       </div>
 
       {/* Coordinates Display & Presets */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
-        <div className="text-slate-600 font-mono">
+        <div className="text-slate-600 font-mono flex items-center gap-2 flex-wrap">
           {latitude && longitude ? (
             <span className="inline-flex items-center gap-1 bg-brand-50 px-2.5 py-1 rounded-md border border-brand-200 text-brand-800 font-semibold shadow-xs">
               📍 {Number(latitude).toFixed(6)}° N, {Number(longitude).toFixed(6)}° E
             </span>
           ) : (
             <span className="text-slate-400 italic">No coordinates selected</span>
+          )}
+
+          {geoStatus?.accuracy && (
+            <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-md font-semibold">
+              ±{geoStatus.accuracy}m accuracy
+            </span>
           )}
         </div>
 
@@ -430,7 +597,7 @@ export default function LocationPickerMap({ latitude, longitude, onLocationChang
             <button
               key={idx}
               type="button"
-              onClick={() => handleSelectPreset(p.lat, p.lng)}
+              onClick={() => handleSelectPreset(p.lat, p.lng, p.label)}
               className="text-[11px] bg-slate-100 hover:bg-brand-50 hover:text-brand-700 px-2 py-0.5 rounded text-slate-600 border border-slate-200 transition-colors"
             >
               {p.label}

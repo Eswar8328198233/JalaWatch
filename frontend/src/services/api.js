@@ -107,6 +107,67 @@ export async function getReports(filters = {}) {
   return request(`/api/reports${queryString}`);
 }
 
+const _clientGeoCache = new Map();
+
+/**
+ * Reverse geocodes latitude & longitude into structured address components:
+ * village/locality, district, state, street, landmark, and display_name.
+ * Employs client-side LRU in-memory caching to comply with rate limits.
+ */
+export async function reverseGeocode(lat, lng) {
+  const roundedLat = Number(Number(lat).toFixed(4));
+  const roundedLng = Number(Number(lng).toFixed(4));
+  const cacheKey = `${roundedLat},${roundedLng}`;
+
+  if (_clientGeoCache.has(cacheKey)) {
+    return _clientGeoCache.get(cacheKey);
+  }
+
+  try {
+    const data = await request(`/api/geocode/reverse?lat=${roundedLat}&lng=${roundedLng}`);
+    if (data && data.address) {
+      _clientGeoCache.set(cacheKey, data.address);
+      return data.address;
+    }
+  } catch (err) {
+    console.warn('Backend reverse geocode fallback to direct Nominatim lookup:', err);
+    try {
+      const nomUrl = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${roundedLat}&lon=${roundedLng}&zoom=18&addressdetails=1`;
+      const res = await fetch(nomUrl, {
+        headers: { 'User-Agent': 'JalaWatch-Community-Water-Portal/1.0 (nutakki-csp@jalawatch.org)' }
+      });
+      if (res.ok) {
+        const raw = await res.json();
+        const addr = raw.address || {};
+        const parsed = {
+          village: addr.village || addr.hamlet || addr.town || addr.suburb || addr.neighbourhood || addr.city_district || addr.county || addr.city || '',
+          district: addr.state_district || addr.district || addr.county || '',
+          state: addr.state || 'Andhra Pradesh',
+          street: addr.road || addr.residential || addr.pedestrian || addr.footway || '',
+          landmark: addr.amenity || addr.building || addr.natural || addr.landmark || addr.shop || addr.place || '',
+          display_name: raw.display_name || `${roundedLat}° N, ${roundedLng}° E`
+        };
+        _clientGeoCache.set(cacheKey, parsed);
+        return parsed;
+      }
+    } catch (fallbackErr) {
+      console.warn('Direct Nominatim geocoding also unreachable:', fallbackErr);
+    }
+  }
+
+  // Graceful fallback coordinates
+  const fallback = {
+    village: '',
+    district: '',
+    state: 'Andhra Pradesh',
+    street: '',
+    landmark: '',
+    display_name: `${roundedLat}° N, ${roundedLng}° E`
+  };
+  _clientGeoCache.set(cacheKey, fallback);
+  return fallback;
+}
+
 export async function getReportById(reportId) {
   return request(`/api/reports/${reportId}`);
 }
@@ -138,6 +199,10 @@ export async function getAdminReports(token, filters = {}) {
   if (filters.search) params.append('search', filters.search);
   if (filters.status && filters.status !== 'All') params.append('status', filters.status);
   if (filters.category && filters.category !== 'All') params.append('category', filters.category);
+  if (filters.village && filters.village !== 'All') params.append('village', filters.village);
+  if (filters.priority && filters.priority !== 'All') params.append('priority', filters.priority);
+  if (filters.assigned_to && filters.assigned_to !== 'All') params.append('assigned_to', filters.assigned_to);
+  if (filters.sort_by) params.append('sort_by', filters.sort_by);
 
   const queryString = params.toString() ? `?${params.toString()}` : '';
   return request(`/api/admin/reports${queryString}`, {
@@ -153,11 +218,84 @@ export async function updateAdminReportStatus(token, reportId, payload) {
   });
 }
 
+export async function updateAdminReportPriority(token, reportId, priority) {
+  return request(`/api/admin/reports/${reportId}/priority`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ priority }),
+  });
+}
+
+export async function assignAdminReport(token, reportId, assignedTo) {
+  return request(`/api/admin/reports/${reportId}/assign`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ assigned_to: assignedTo }),
+  });
+}
+
+export async function getAdminReportNotes(token, reportId) {
+  return request(`/api/admin/reports/${reportId}/notes`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function addAdminReportNote(token, reportId, note) {
+  return request(`/api/admin/reports/${reportId}/notes`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ note }),
+  });
+}
+
 export async function updateAdminLabTest(token, reportId, payload) {
   return request(`/api/admin/reports/${reportId}/lab-test`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify(payload),
+  });
+}
+
+export async function getAdminUsers(token) {
+  return request('/api/admin/users', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createAdminUser(token, payload) {
+  return request('/api/admin/users', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAdminUserRole(token, userId, role) {
+  return request(`/api/admin/users/${userId}/role`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ role }),
+  });
+}
+
+export async function changeAdminPassword(token, currentPassword, newPassword) {
+  return request('/api/admin/change-password', {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  });
+}
+
+export async function getHotspots() {
+  return request('/api/admin/analytics/hotspots');
+}
+
+export async function getDuplicateClusters(token) {
+  return request('/api/admin/reports/duplicates', {
+    headers: { Authorization: `Bearer ${token}` },
   });
 }
 

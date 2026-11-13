@@ -23,7 +23,7 @@ def seed():
             pwd_hash = hash_password(admin_password)
             cursor.execute("""
                 INSERT INTO admins (username, email, password_hash, role, created_at)
-                VALUES (?, ?, ?, 'admin', ?)
+                VALUES (?, ?, ?, 'super_admin', ?)
             """, (admin_username, admin_email, pwd_hash, now_str))
             print(f"[Seed] Created admin account: {admin_username}")
         else:

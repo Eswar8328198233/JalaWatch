@@ -38,7 +38,7 @@ def run_tests():
     print("   JALAWATCH IMAGE UPLOAD & VALIDATION TEST")
     print("==================================================")
     client = app.test_client()
-    created_reports = ["JW-2026-4730", "JW-2026-3647", "JW-2026-3161"]
+    created_reports = []
 
     try:
         # Common form fields
