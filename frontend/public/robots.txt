@@ -7,3 +7,4 @@ Allow: /
 
 # XML Sitemap Location
 Sitemap: https://eswar8328198233.github.io/JalaWatch/sitemap.xml
+
